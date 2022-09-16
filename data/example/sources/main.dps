@@ -1,0 +1,9 @@
+/function tick [tick]:
+    pass
+/function load [load]:
+    /say loaded Example Pack
+
+create loot_tables normal {
+    'test': 1,
+    'me': 2
+}
