@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import inspect
 import json
 import os
@@ -20,7 +21,8 @@ def save_settings():
 with open(SETTINGS, 'r+') as read:
     try:
         settings = json.load(read)
-    except json.decoder.JSONDecodeError:
+    except json.decoder.JSONDecodeError as e:
+        print('Failed to load settings.json:', e, file=sys.stderr)
         settings = {'input': '.', 'output': 'output'}
         save_settings()
         print('Settings set to default values')
@@ -40,7 +42,7 @@ def get_menu():
             fun_stack = ['']
 
             def __line__(ln: str):
-                files[fun_stack[-1]].append(ln.replace('longIshWordO_o', '{').replace('\n', '}'))
+                files[fun_stack[-1]].append(ln)
 
             def __function__(fun_name: str):
                 if fun_stack[-1] == fun_name:
@@ -50,7 +52,7 @@ def get_menu():
                     fun_stack.append(fun_name)
                     return True
 
-            if settings['input'] == '':
+            if not settings['input']:
                 settings['input'] = '.'
             data = os.path.join(settings['input'], 'data')
             if os.path.exists(data):
@@ -70,20 +72,20 @@ def get_menu():
             for filename in os.listdir(working_folder):
                 if filename.endswith(f'.{EXTENSION}'):
                     command_line = re.compile(r'([\t ]*)/(.*)')
-                    interpolation = re.compile('\\$longIshWordO_o(.*?)\n')
+                    interpolation = re.compile(r'\$\{\{.*?}}')
                     create_statement = re.compile(r'([\t ]*)create\b[ \t]*([\w/]+)\b[ \t]*([a-z\d:/_-]*)\b(.*)')
                     code = []
-                    concat_line = None
+                    # concat_line = None
                     with open(os.path.join(working_folder, filename), 'r') as r:
                         for line in r:
                             # <editor-fold defaultstate="collapsed" desc="allow \ at the end of a line for concat">
 
-                            if concat_line is not None:
-                                line = f'{concat_line}{line}'
-                                concat_line = None
-                            if line.endswith('\\'):
-                                concat_line = line[:-1]
-                                continue
+                            # if concat_line is not None:
+                            #     line = f'{concat_line} {line}'
+                            #     concat_line = None
+                            # if line.endswith('\\'):
+                            #     concat_line = line[:-1]
+                            #     continue
 
                             # </editor-fold>
 
@@ -91,10 +93,8 @@ def get_menu():
                             if found:
                                 spacing, contents = found.group(1), found.group(2)
                                 q = '"""' if contents.endswith("'") else "'''"
-                                if 'longIshWordO_o' in contents:
-                                    raise ValueError(f'found illegal sequence in {contents}')
-                                # replace { and } with other sequences so they don't interfere with f string
-                                contents = contents.replace('{', 'longIshWordO_o').replace('}', '\n')
+                                # replace { and } with other sequences, so they don't interfere with f string
+                                contents = contents.replace('{', '{{').replace('}', '}}')
                                 # replace interpolation with value
                                 contents = interpolation.sub(r"{\1}", contents)
                                 extra_line = None
@@ -145,7 +145,7 @@ def get_menu():
             for name, content in files.items():
                 path = os.path.join(output_folder, f'data/{name.replace(":", "/functions/")}.mcfunction')
                 try:
-                    os.makedirs(os.path.abspath(os.path.join(path, '..')))
+                    os.makedirs(os.path.dirname(path))
                 except FileExistsError:
                     pass
                 with open(path, 'w') as w:
@@ -153,12 +153,8 @@ def get_menu():
 
             # <editor-fold defaultstate="collapsed" desc="Move function tags into 'other' dictionary">
 
-            func_tags_final = {}
-            for tag, func_names in function_tags.items():
-                func_tags_final[tag] = {
-                    'values': func_names
-                }
-            other.setdefault('tags/functions', {}).update(func_tags_final)
+            other.setdefault('tags/functions', {}).update(
+                {tag: {'values': func_names} for tag, func_names in function_tags.items()})
 
             # </editor-fold>
 
@@ -184,7 +180,8 @@ def get_menu():
                         for file in files1:
                             ziph.write(os.path.join(root, file),
                                        os.path.relpath(os.path.join(root, file),
-                                                       os.path.join(path1, '..')))
+                                                       os.path.dirname(path1)))
+
                 zipf = zipfile.ZipFile(settings['output'], 'w', zipfile.ZIP_DEFLATED)
                 zipdir(os.path.join(output_folder, 'data'), zipf)
                 zipf.write(os.path.join(output_folder, 'pack.mcmeta'), 'pack.mcmeta')
@@ -197,10 +194,11 @@ def get_menu():
 
     def gene():
         """g - Generate Template"""
+        print("All of the following fields have defaults:")
         namespace = input('Namespace (all lowercase): ') or 'main'
         name = input('Datapack Name: ') or 'Datapack'
         desc = input('Description: ') or 'The default data for Minecraft'
-        pack_format = int(input('Pack Format: ') or '7')
+        pack_format = int(input('Pack Format: ') or '15')
         sources = os.path.join(settings['input'], f'data/{namespace}/sources')
         try:
             os.makedirs(sources)
@@ -250,10 +248,7 @@ def get_menu():
         return True
 
     # Dictionaries maintain order
-    result = {}
-    for func in [comp, view, gene, outp, inpu, qui]:
-        result[func.__doc__[0]] = func
-    return result
+    return {func.__doc__[0]: func for func in [comp, view, gene, outp, inpu, qui]}
 
 
 menu_dict = get_menu()
@@ -267,13 +262,19 @@ def menu():
     return (menu_dict.get(letter) or (lambda: None))()
 
 
-if __name__ == '__main__':
+def main():
+    # noinspection PyGlobalUndefined
+    global menu
     if len(sys.argv) > 1:
         for arg in sys.argv[1:]:
-            if not (x := menu_dict.get(arg)):
+            if not (func := menu_dict.get(arg)):
                 raise RuntimeError(f"didn't understand argument {arg}")
             else:
-                if x() is not None:
-                    menu = lambda:True
+                if func() is not None:
+                    def menu(): return True
     while menu() is None:
         pass
+
+
+if __name__ == '__main__':
+    main()
