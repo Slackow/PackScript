@@ -97,99 +97,117 @@ def comp_file(files, parent, filename, locals, function_tags=None, namespace='mi
                 else:
                     code.append(line)
     print(f'{parent}/{filename}')
-    exec('\n'.join(code), {}, {func.__name__ : func for func in locals})
+    exec('\n'.join(code), {}, {func.__name__: func for func in locals})
 
 
 def comp(*, input, output, **_):
-    for namespace in os.listdir(os.path.join(input, 'data')):
-        files: dict[str, list[str]] = {'': []}
-        function_tags: dict[str, list[str]] = {}
-        other: dict[str, dict[str, object]] = {}
-        fun_stack = ['']
+    try:
+        for namespace in os.listdir(os.path.join(input, 'data')):
+            files: dict[str, list[str]] = {'': []}
+            function_tags: dict[str, list[str]] = {}
+            other: dict[str, dict[str, object]] = {}
+            fun_stack = ['']
 
-        def __other__(s: str):
-            return other.setdefault(s, {})
+            def __other__(s: str):
+                return other.setdefault(s, {})
 
-        def __line__(ln: str):
-            files[fun_stack[-1]].append(ln)
+            def __line__(ln: str):
+                files[fun_stack[-1]].append(ln)
 
-        def __function__(fun_name: str):
-            if fun_stack[-1] == fun_name:
-                fun_stack.pop()
-                return False
+            def __function__(fun_name: str):
+                if fun_stack[-1] == fun_name:
+                    fun_stack.pop()
+                    return False
+                else:
+                    fun_stack.append(fun_name)
+                    return True
+
+            if not input:
+                input = '.'
+            data = os.path.join(input, 'data')
+            if os.path.exists(data):
+                is_zip = output.endswith('.zip')
+                if is_zip:
+                    output_folder = output[:-4]
+                else:
+                    output_folder = output
+                shutil.rmtree(output_folder)
+                shutil.copytree(data, os.path.join(output_folder, 'data'))
+                shutil.copy(os.path.join(input, 'pack.mcmeta'),
+                            os.path.join(output_folder, 'pack.mcmeta'))
+
             else:
-                fun_stack.append(fun_name)
-                return True
-
-        if not input:
-            input = '.'
-        data = os.path.join(input, 'data')
-        if os.path.exists(data):
-            is_zip = output.endswith('.zip')
-            if is_zip:
-                output_folder = output[:-4]
-            else:
-                output_folder = output
-            shutil.rmtree(output_folder)
-            shutil.copytree(data, os.path.join(output_folder, 'data'))
-            shutil.copy(os.path.join(input, 'pack.mcmeta'),
-                        os.path.join(output_folder, 'pack.mcmeta'))
-
-        else:
-            raise FileNotFoundError('need data folder and pack.mcmeta')
-        working_folder = os.path.join(input, f'data/{namespace}/sources')
-        for filename in os.listdir(working_folder):
-            if filename.endswith(f'.{DATA_EXT}'):
-                comp_file(files, working_folder, filename, {__line__, __function__, __other__}, function_tags, namespace)
-        files.pop('')
-        # Iterate through generated functions
-        for name, content in files.items():
-            path = os.path.join(output_folder, f'data/{name.replace(":", "/functions/")}.mcfunction')
-            try:
-                os.makedirs(os.path.dirname(path))
-            except FileExistsError:
-                pass
-            with open(path, 'w') as w:
-                w.write('\n'.join(content))
-
-        # <editor-fold defaultstate="collapsed" desc="Move function tags into 'other' dictionary">
-
-        other.setdefault('tags/functions', {}).update(
-            {tag: {'values': func_names} for tag, func_names in function_tags.items()})
-
-        # </editor-fold>
-
-        # Write stuff in other
-        for file_type, stuff in other.items():
-            for name, content in stuff.items():
-                path = os.path.join(output_folder, f'data/{name.replace(":", f"/{file_type}/")}.json')
+                raise FileNotFoundError('need data folder and pack.mcmeta')
+            working_folder = os.path.join(input, f'data/{namespace}/sources')
+            for filename in os.listdir(working_folder):
+                if filename.endswith(f'.{DATA_EXT}'):
+                    comp_file(files, working_folder, filename, {__line__, __function__, __other__}, function_tags,
+                              namespace)
+            files.pop('')
+            # Iterate through generated functions
+            for name, content in files.items():
+                path = os.path.join(output_folder, f'data/{name.replace(":", "/functions/")}.mcfunction')
                 try:
-                    os.makedirs(os.path.abspath(os.path.join(path, '..')))
+                    os.makedirs(os.path.dirname(path))
                 except FileExistsError:
                     pass
                 with open(path, 'w') as w:
-                    if isinstance(content, dict):
-                        json.dump(content, w)
-                    elif isinstance(content, str):
-                        w.write(content)
-                    elif isinstance(content, list):
-                        w.write('\n'.join(content))
-                    else:
-                        raise ValueError(f'Error: invalid content: {content}')
-        if is_zip:
-            def zipdir(path1, ziph):
-                # ziph is zipfile handle
-                for root, dirs, files1 in os.walk(path1):
-                    for file in files1:
-                        ziph.write(os.path.join(root, file),
-                                   os.path.relpath(os.path.join(root, file),
-                                                   os.path.dirname(path1)))
+                    w.write('\n'.join(content) + '\n')
 
-            zipf = zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED)
-            zipdir(os.path.join(output_folder, 'data'), zipf)
-            zipf.write(os.path.join(output_folder, 'pack.mcmeta'), 'pack.mcmeta')
-            zipf.close()
-            shutil.rmtree(output_folder)
+            # <editor-fold defaultstate="collapsed" desc="Move function tags into 'other' dictionary">
+
+            other.setdefault('tags/functions', {}).update(
+                {tag: {'values': func_names} for tag, func_names in function_tags.items()})
+
+            # </editor-fold>
+
+            # Write stuff in other
+            for file_type, stuff in other.items():
+                for name, content in stuff.items():
+                    path = os.path.join(output_folder, f'data/{name.replace(":", f"/{file_type}/")}.json')
+                    try:
+                        os.makedirs(os.path.abspath(os.path.join(path, '..')))
+                    except FileExistsError:
+                        pass
+                    with open(path, 'w') as w:
+                        if isinstance(content, dict):
+                            json.dump(content, w)
+                        elif isinstance(content, str):
+                            w.write(content)
+                        elif isinstance(content, list):
+                            w.write('\n'.join(content) + '\n')
+                        else:
+                            raise ValueError(f'Error: invalid content: {content}')
+            if is_zip:
+                def zipdir(path1, ziph):
+                    # ziph is zipfile handle
+                    for root, dirs, files1 in os.walk(path1):
+                        for file in files1:
+                            ziph.write(os.path.join(root, file),
+                                       os.path.relpath(os.path.join(root, file),
+                                                       os.path.dirname(path1)))
+
+                zipf = zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED)
+                zipdir(os.path.join(output_folder, 'data'), zipf)
+                zipf.write(os.path.join(output_folder, 'pack.mcmeta'), 'pack.mcmeta')
+                zipf.close()
+                shutil.rmtree(output_folder)
+    except FileNotFoundError:
+        pass
+    files = {}
+    for f in os.listdir(input):
+        if f.endswith(f'.{FUNC_EXT}'):
+            def __line__(ln):
+                files[f].append(ln)
+
+            files[f] = []
+            comp_file(files, input, f, {__line__})
+    for f, content in files.items():
+        path = os.path.join(input, f'{f.removesuffix(f".{FUNC_EXT}")}.mcfunction')
+        with open(path, 'w') as w:
+            w.write('\n'.join(content) + '\n')
+
+
 
 
 def gen_template(*, name: str, description: str, pack_format: int, output: str, namespace: str, **_):
@@ -202,8 +220,8 @@ def gen_template(*, name: str, description: str, pack_format: int, output: str, 
     x = '1.20.1'
     desc = description or input('Description: ')
     pack_format = pack_format or \
-        pack_formats.get(x := input(f'Pack Format/Minecraft Version (up to {x}):')) or \
-        int(x or '15')
+                  pack_formats.get(x := input(f'Pack Format/Minecraft Version (up to {x}):')) or \
+                  int(x or '15')
     desc = desc or f"Datapack '{name}' for version {x}"
     sources = os.path.join(output, f'data/{namespace}/sources')
     try:
