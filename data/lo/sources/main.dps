@@ -1,0 +1,6 @@
+/function tick [tick]:
+    pass
+/[separate not impact function:
+    x = None
+/function load [load]:
+    /say loaded Datapack

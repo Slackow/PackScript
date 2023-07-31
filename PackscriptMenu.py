@@ -5,17 +5,19 @@ import json
 import os
 import re
 import shutil
+import sys
 import zipfile
 
 DATA_EXT = 'dps'
-FUNC_EXT = 'fs'
+FUNC_EXT = 'fps'
 
 namespace_re = re.compile(r'[a-z0-9-_]+')
 
 pack_formats = {
     '1.20.1': 15, '1.20': 15, '1.19.4': 12,
     **{f'1.19.{x}': 10 for x in range(1, 4)},
-    '1.19': 10, '1.18.2': 9,
+    '1.19': 10,
+    '1.18.2': 9,
     '1.18.1': 8, '1.18': 8,
     '1.17.1': 7, '1.17': 7,
     **{f'1.16.{x}': 6 for x in range(2, 6)},
@@ -25,7 +27,8 @@ pack_formats = {
 }
 
 
-def comp_file(files, parent, filename, locals, function_tags=None, namespace='minecraft'):
+def comp_file(files: dict[str, object], parent: str, filename: str, locals: list[object],
+              function_tags: dict | None = None, namespace='minecraft') -> None:
     function_tags = function_tags or {}
     command_line = re.compile(r'([\t ]*)/(.*)')
     interpolation = re.compile(r'\$\{\{(.*?)}}')
@@ -125,23 +128,23 @@ def comp(*, input, output, **_):
             if not input:
                 input = '.'
             data = os.path.join(input, 'data')
-            if os.path.exists(data):
+            if os.path.exists(data) and os.path.exists(os.path.join(input, 'pack.mcmeta')):
                 is_zip = output.endswith('.zip')
-                if is_zip:
-                    output_folder = output[:-4]
-                else:
-                    output_folder = output
+                output_folder = output.removesuffix('.zip')
                 shutil.rmtree(output_folder)
                 shutil.copytree(data, os.path.join(output_folder, 'data'))
                 shutil.copy(os.path.join(input, 'pack.mcmeta'),
                             os.path.join(output_folder, 'pack.mcmeta'))
+                if os.path.exists(os.path.join(input, 'pack.png')):
+                    shutil.copy(os.path.join(input, 'pack.png'),
+                                os.path.join(output_folder, 'pack.png'))
 
             else:
                 raise FileNotFoundError('need data folder and pack.mcmeta')
             working_folder = os.path.join(input, f'data/{namespace}/sources')
             for filename in os.listdir(working_folder):
                 if filename.endswith(f'.{DATA_EXT}'):
-                    comp_file(files, working_folder, filename, {__line__, __function__, __other__}, function_tags,
+                    comp_file(files, working_folder, filename, [__line__, __function__, __other__], function_tags,
                               namespace)
             files.pop('')
             # Iterate through generated functions
@@ -197,17 +200,25 @@ def comp(*, input, output, **_):
     files = {}
     for f in os.listdir(input):
         if f.endswith(f'.{FUNC_EXT}'):
-            def __line__(ln):
-                files[f].append(ln)
-
+            fun_stack = [f]
             files[f] = []
-            comp_file(files, input, f, {__line__})
+
+            def __line__(ln):
+                files[fun_stack[-1]].append(ln)
+
+            def __function__(fun_name: str):
+                if fun_stack[-1] == fun_name:
+                    fun_stack.pop()
+                    return False
+                else:
+                    fun_stack.append(fun_name)
+                    return True
+
+            comp_file(files, input, f, [__line__, __function__])
     for f, content in files.items():
-        path = os.path.join(input, f'{f.removesuffix(f".{FUNC_EXT}")}.mcfunction')
+        path = os.path.join(output, f'{f.removesuffix(f".{FUNC_EXT}")}.mcfunction')
         with open(path, 'w') as w:
             w.write('\n'.join(content) + '\n')
-
-
 
 
 def gen_template(*, name: str, description: str, pack_format: int, output: str, namespace: str, **_):
@@ -220,8 +231,8 @@ def gen_template(*, name: str, description: str, pack_format: int, output: str, 
     x = '1.20.1'
     desc = description or input('Description: ')
     pack_format = pack_format or \
-                  pack_formats.get(x := input(f'Pack Format/Minecraft Version (up to {x}):')) or \
-                  int(x or '15')
+        pack_formats.get(x := input(f'Pack Format/Minecraft Version (defaults to {x}):')) or \
+        int(x or next(iter(pack_formats.values())))
     desc = desc or f"Datapack '{name}' for version {x}"
     sources = os.path.join(output, f'data/{namespace}/sources')
     try:
@@ -245,6 +256,7 @@ def gen_template(*, name: str, description: str, pack_format: int, output: str, 
 
 
 def main():
+    print(sys.argv)
     # Argument parsing
     parser = argparse.ArgumentParser(description='This is a datapack compiler for Minecraft')
     subparsers = parser.add_subparsers(dest="command")
