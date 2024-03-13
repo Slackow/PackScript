@@ -1,9 +1,32 @@
+import re
+
 x = 0
 b = 2
 /should be ignored
 /function example:
-    /please work
+    /say hi
 /function:
     /execute as @e[type=pig] run function:
         /kill @s
-        /say I'm d{e}ad! ${b}
+        /say I'm d{e}ad! @s ${b}
+
+def only_one_command(definer):
+    with capture_lines() as lines:
+        definer()
+    lines: list[str]
+    lines.insert(0, 'gamerule commandBlockOutput false')
+    lines.extend(('setblock ~ ~1 ~ command_block{auto:1b,Command:"fill ~ ~ ~ ~ ~-4 ~ air"}', 'kill @e[type=command_block_minecart,distance=..1]'))
+    def rep(ln):
+        return re.sub(r"[\\']", r'\\1', ln)
+    main = ','.join([f'''{{id:command_block_minecart,Command:'{rep(ln)}'}},''' for ln in lines])
+    /summon falling_block ~ ~1 ~ {BlockState:{Name:redstone_block},Passengers:[{id:falling_block,BlockState:{Name:activator_rail}},${main}]}
+
+
+/function ooc:
+    def say():
+        /say first command
+        /say second lame command
+        /say third lamer command lol
+        /tellraw @a "look ma I'm using quotes \\/!"
+        /tellraw @a "say \"lol\""
+    only_one_command(say)
