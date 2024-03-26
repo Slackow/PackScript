@@ -15,7 +15,7 @@ latest_version = '1.20.4'
 namespace_re = re.compile(r'[a-z0-9-_]+')
 
 
-def ver(base_version, start, end, *, pf):
+def ver(base_version, /, start, end, *, pf):
     return {f'{base_version}.{x}': pf for x in range(start, end + 1)}
 
 
@@ -34,20 +34,20 @@ pack_formats = {
 }
 
 
-def ns(resource: str, /, *, default: str = "minecraft"):
-    return resource if ':' in resource else f"{default}:{resource}"
+def ns(resource: str, /, *, default: str = 'minecraft'):
+    return resource if ':' in resource else f'{default}:{resource}'
 
 
-def comp_file(files: dict[str, object], parent: str, filename: str, globals: list[object],
+def comp_file(func_files: dict[str, object], parent: str, filename: str, globals: list[object],
               function_tags: dict, namespace='minecraft', verbose=False) -> None:
-    command_line = re.compile(r'([\t ]*)/(.*)')
-    interpolation = re.compile(r'\$\{\{(.*?)}}')
-    create_statement = re.compile(r'([\t ]*)create\b[ \t]*([\w/]+)\b[ \t]*([a-z\d:/_-]*)[ \t]*->(.*)')
+    command_re = re.compile(r'([\t ]*)/(.*)')
+    interpolation_re = re.compile(r'\$\{\{(.*?)}}')
+    create_statement_re = re.compile(r'([\t ]*)create\b[ \t]*([\w/]+)\b[ \t]*([a-z\d:/_.-]*)[ \t]*->(.*)')
     code = []
     concat_line = None
     with open(os.path.join(parent, filename), 'r') as r:
         for line in r:
-            line = line.rstrip('\n')
+            line = line.rstrip()
 
             if concat_line is not None:
                 line = f'{concat_line}{line.lstrip()}'
@@ -56,47 +56,47 @@ def comp_file(files: dict[str, object], parent: str, filename: str, globals: lis
                 concat_line = line[:-1]
                 continue
 
-            found = command_line.match(line)
-            if found:
-                indent, contents = found.group(1), found.group(2)
+            command_match = command_re.match(line)
+            if command_match:
+                indent, contents = command_match.groups()
                 # replace { and } with other sequences, so they don't interfere with f string
                 contents = contents.replace('{', '{{').replace('}', '}}')
                 # replace interpolation with value
-                contents = interpolation.sub(r"{\1}", contents)
+                contents = interpolation_re.sub(r'{\1}', contents)
                 extra_line = None
                 if contents.endswith(':'):
                     func_re = re.compile(
                         r'function\b[ \t]*'
                         r'([a-z\d:/_-]*)\b[\t ]*(?:\['
                         r'([a-z\d:/_, -]*)])?[\t ]*:$')
-                    match_res = func_re.search(contents)
+                    func_match = func_re.search(contents)
+                    # print('func: ', line)
                     if not func_re:
-                        raise ValueError(f"Command ends with colon but does not contain function: "
-                                         f"{command_line}")
-                    func_name, tags = match_res.group(1), match_res.group(2)
+                        raise ValueError('Command ends with colon but does not contain function: '
+                                         f'{command_re}')
+                    func_name, tags = func_match.groups()
                     if func_name == '':
                         func_name = f'{namespace}:anon/function'
                     func_name = ns(func_name, default=namespace)
-                    if func_name in files:
+                    if func_name in func_files:
                         x = 1
-                        while f'{func_name}_{x}' in files:
+                        while f'{func_name}_{x}' in func_files:
                             x += 1
                         func_name = f'{func_name}_{x}'
-                    files[func_name] = []
+                    func_files[func_name] = []
                     if tags:
                         for tag in tags.split(','):
                             tag = ns(tag.strip())
                             function_tags.setdefault(tag, []).append(func_name)
                     extra_line = f'{indent}while __function__("{func_name}"):'
-                    contents = f'{contents[:match_res.span()[0]]}function {func_name}'
+                    contents = f'{contents[:func_match.span()[0]]}function {func_name}'
                 code.append(f'{indent}__line__(rf""" {contents} """[1:-1])')
                 if extra_line:
                     code.append(extra_line)
             else:
-                create = create_statement.fullmatch(line)
-                if create:
-                    indent, file_type, name, data = \
-                        (create.group(i) for i in range(1, 5))
+                create_match = create_statement_re.fullmatch(line)
+                if create_match:
+                    indent, file_type, name, data = create_match.groups()
                     name = ns(name, default=namespace)
                     code.append(f'{indent}__other__("{file_type}")["{name}"] ={data}')
                 else:
@@ -141,45 +141,55 @@ def build_functions(fun_stack: list, capturer_stack: list, files: dict, other: d
     return [__other__, __line__, __function__, capture_lines]
 
 
-def comp(*, input, output, verbose, **_):
+def comp(*, input, output, verbose, sources, **_):
     try:
-        for namespace in os.listdir(os.path.join(input, 'data')):
-            files: dict[str, list[str]] = {'': []}
-            function_tags: dict[str, list[str]] = {}
-            other: dict[str, dict[str, object]] = {}
-            fun_stack = ['']
-            capturer_stack = []
+        namespaces = os.listdir(os.path.join(input, 'data'))
 
-            functions = build_functions(fun_stack, capturer_stack, files, other)
-
+        is_zip = output.endswith('.zip')
+        output_folder = output.removesuffix('.zip')
+        if namespaces:
             if not input:
                 input = '.'
             data = os.path.join(input, 'data')
             if os.path.exists(data) and os.path.exists(os.path.join(input, 'pack.mcmeta')):
-                is_zip = output.endswith('.zip')
-                output_folder = output.removesuffix('.zip')
-                shutil.rmtree(output_folder)
+                try:
+                    shutil.rmtree(os.path.join(output_folder, 'data'))
+                except IOError:
+                    pass
                 shutil.copytree(data, os.path.join(output_folder, 'data'))
                 shutil.copy(os.path.join(input, 'pack.mcmeta'),
                             os.path.join(output_folder, 'pack.mcmeta'))
                 if os.path.exists(os.path.join(input, 'pack.png')):
                     shutil.copy(os.path.join(input, 'pack.png'),
                                 os.path.join(output_folder, 'pack.png'))
-
             else:
                 raise FileNotFoundError('need data folder and pack.mcmeta')
+
+        function_tags: dict[str, list[str]] = {}
+        other: dict[str, dict[str, object]] = {}
+        for namespace in namespaces:
+            if not sources:
+                shutil.rmtree(os.path.join(output_folder, 'data', namespace, 'sources'))
+
+            func_files: dict[str, list[str]] = {'': []}
+            func_stack = ['']
+            capturer_stack = []
+
+            functions = build_functions(func_stack, capturer_stack, func_files, other)
             working_folder = os.path.join(input, f'data/{namespace}/sources')
             try:
                 for filename in os.listdir(working_folder):
                     if filename.endswith(f'.{DATA_EXT}'):
-                        comp_file(files, working_folder, filename, functions,
+                        comp_file(func_files, working_folder, filename, functions,
                                   function_tags, namespace, verbose=verbose)
             except NotADirectoryError:
                 continue
-            files.pop('')
+            func_files.pop('')
             # Iterate through generated functions
-            for name, content in files.items():
+            for name, content in func_files.items():
                 path = os.path.join(output_folder, f'data/{name.replace(":", "/functions/")}.mcfunction')
+                if not content:
+                    continue
                 try:
                     os.makedirs(os.path.dirname(path))
                 except FileExistsError:
@@ -197,13 +207,14 @@ def comp(*, input, output, verbose, **_):
             # Write stuff in other
             for file_type, stuff in other.items():
                 for name, content in stuff.items():
-                    path = os.path.join(output_folder, f'data/{name.replace(":", f"/{file_type}/")}.json')
+                    path = os.path.join(output_folder, f'data/{name.replace(":", f"/{file_type}/")}.json'
+                                        if '.' not in name else f'data/{name.replace(":", f"/{file_type}/")}')
                     try:
                         os.makedirs(os.path.abspath(os.path.join(path, '..')))
                     except FileExistsError:
                         pass
                     with open(path, 'w') as w:
-                        if isinstance(content, dict) or isinstance(content, list):
+                        if isinstance(content, (dict, list)):
                             json.dump(content, w, indent=2)
                         elif isinstance(content, str):
                             w.write(content)
@@ -225,17 +236,16 @@ def comp(*, input, output, verbose, **_):
                 shutil.rmtree(output_folder)
     except FileNotFoundError:
         pass
-    files = {}
+    func_files = {}
     for f in os.listdir(input):
         if f.endswith(f'.{FUNC_EXT}'):
-            fun_stack = [f]
-            files[f] = []
+            func_stack = [f]
+            func_files[f] = []
 
-            functions = build_functions(fun_stack, [], files, {})
+            functions = build_functions(func_stack, [], func_files, {})
 
-            comp_file(files, input, f, functions, {})
-    for f, content in files.items():
-        print('lol:', f)
+            comp_file(func_files, input, f, functions, {}, verbose=verbose)
+    for f, content in func_files.items():
         path = os.path.join(output, f'{f.removesuffix(f".{FUNC_EXT}")}.mcfunction')
         with open(path, 'w') as w:
             w.write('\n'.join(content) + '\n')
@@ -243,7 +253,7 @@ def comp(*, input, output, verbose, **_):
 
 def gen_template(*, name: str, description: str, pack_format: int, output: str, namespace: str, **_):
     if not all((name, description, pack_format, output, namespace)):
-        print("Leave a field empty to have it default")
+        print('Leave a field empty to have it default')
     namespace = namespace or input('Namespace (main): ') or 'main'
     namespace = re.sub(r'\W', '-', namespace.lower().replace(' ', '_'))
     if not namespace_re.fullmatch(namespace):
@@ -251,10 +261,10 @@ def gen_template(*, name: str, description: str, pack_format: int, output: str, 
     name = name or input('Datapack Name (Datapack): ') or 'datapack'
     x = latest_version
     pack_format = pack_format or \
-        pack_formats.get(x := input(f'Pack Format/Minecraft Version ({x}):')) or \
-        int(x or next(iter(pack_formats.values())))
+                  pack_formats.get(x := input(f'Pack Format/Minecraft Version ({x}):')) or \
+                  int(x or next(iter(pack_formats.values())))
     description = description or input(f"Description (Datapack '{name}' for version {x}): ") or \
-        f"Datapack '{name}' for version {x}"
+                  f"Datapack '{name}' for version {x}"
     sources = os.path.join(output, f'data/{namespace}/sources')
     try:
         os.makedirs(sources)
@@ -286,6 +296,8 @@ def main():
     parser_compile.add_argument('-o', '--output', type=str, help='Output directory', default='output')
     parser_compile.add_argument('-i', '--input', type=str, help='Input directory', default='.')
     parser_compile.add_argument('-v', '--verbose', help='Print Generated Python Code', default=False,
+                                action='store_true')
+    parser_compile.add_argument('-S', '--sources', help='Include source files in output', default=False,
                                 action='store_true')
 
     # create the parser for the "generate" command
