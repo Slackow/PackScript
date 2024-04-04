@@ -105,7 +105,7 @@ def comp_file(func_files: dict[str, list[str]], parent: str, filename: str, glob
     pyth = '\n'.join(code)
     if verbose:
         print(pyth)
-    exec(pyth, {func.__name__: func for func in globals}, {})
+    exec(pyth, {func.__name__: func for func in globals})
 
 
 def build_functions(fun_stack: list, capturer_stack: list, files: dict, other: dict):
