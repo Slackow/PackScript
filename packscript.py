@@ -41,7 +41,7 @@ def ns(resource: str, /, *, default: str = 'minecraft'):
 def comp_file(func_files: dict[str, list[str]], parent: str, filename: str, globals: list[object],
               function_tags: dict, namespace='minecraft', verbose=False) -> None:
     command_re = re.compile(r'([\t ]*)/(.*)')
-    interpolation_re = re.compile(r'\$\{\{(.*?)}}')
+    interpolation_re = re.compile(r'\$\{\{(.*?)}}|\$([a-zA-Z_]\w*)')
     create_statement_re = re.compile(r'([\t ]*)create\b[ \t]*([\w/]+)\b[ \t]*([a-z\d:/_.-]*)[ \t]*->(.*)')
     code = []
     concat_line = None
@@ -61,8 +61,8 @@ def comp_file(func_files: dict[str, list[str]], parent: str, filename: str, glob
                 indent, contents = command_match.groups()
                 # replace { and } with other sequences, so they don't interfere with f string
                 contents = contents.replace('{', '{{').replace('}', '}}')
-                # replace interpolation with value
-                contents = interpolation_re.sub(r'{\1}', contents)
+                # replace interpolation with value \1\2 is a hack lmao
+                contents = interpolation_re.sub(r'{\1\2}', contents)
                 extra_line = None
                 if contents.endswith(':'):
                     func_re = re.compile(
