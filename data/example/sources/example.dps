@@ -1,4 +1,4 @@
-import re
+
 
 x = 0
 b = 2
@@ -9,21 +9,23 @@ b = 2
     /execute as @e[type=pig] run function:
         /kill @s
         /say I'm d{e}ad! @s ${b}
-
 def only_one_command(definer):
     with capture_lines() as lines:
         definer()
     lines: list[str]
+
     lines.insert(0, 'gamerule commandBlockOutput false')
-    lines.extend(('setblock ~ ~1 ~ command_block{auto:1b,Command:"fill ~ ~ ~ ~ ~-4 ~ air"}', 'kill @e[type=command_block_minecart,distance=..1]'))
+    lines.extend(('setblock ~ ~1 ~ command_block{auto:1b,Command:"fill ~ ~ ~ ~ ~-3 ~ air"}',
+                  'kill @e[type=command_block_minecart,distance=..1]'))
+    import re
     def rep(ln):
-        return re.sub(r"[\\']", r'\\1', ln)
-    main = ','.join([f'''{{id:command_block_minecart,Command:'{rep(ln)}'}},''' for ln in lines])
+        return re.sub(r"([\\'])", r'\\\1', ln)
+    main = ','.join([f'''{{id:command_block_minecart,Command:'{rep(ln)}'}}''' for ln in lines])
     /summon falling_block ~ ~1 ~ {BlockState:{Name:redstone_block},Passengers:[{id:falling_block,BlockState:{Name:activator_rail}},${main}]}
 
 
 /function ooc:
-    def say():
+    def say(): #definer
         /say first command
         /say second lame command
         /say third lamer command lol

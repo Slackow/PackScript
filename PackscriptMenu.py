@@ -38,7 +38,7 @@ def ns(resource: str, /, *, default: str = 'minecraft'):
     return resource if ':' in resource else f'{default}:{resource}'
 
 
-def comp_file(func_files: dict[str, object], parent: str, filename: str, globals: list[object],
+def comp_file(func_files: dict[str, list[str]], parent: str, filename: str, globals: list[object],
               function_tags: dict, namespace='minecraft', verbose=False) -> None:
     command_re = re.compile(r'([\t ]*)/(.*)')
     interpolation_re = re.compile(r'\$\{\{(.*?)}}')
@@ -207,8 +207,10 @@ def comp(*, input, output, verbose, sources, **_):
             # Write stuff in other
             for file_type, stuff in other.items():
                 for name, content in stuff.items():
-                    path = os.path.join(output_folder, f'data/{name.replace(":", f"/{file_type}/")}.json'
-                                        if '.' not in name else f'data/{name.replace(":", f"/{file_type}/")}')
+                    name = name.replace(':', f'/{file_type}/')
+                    if '.' not in name:
+                        name += '.json'
+                    path = os.path.join(output_folder, f'data/{name}')
                     try:
                         os.makedirs(os.path.abspath(os.path.join(path, '..')))
                     except FileExistsError:
@@ -261,10 +263,10 @@ def gen_template(*, name: str, description: str, pack_format: int, output: str, 
     name = name or input('Datapack Name (Datapack): ') or 'datapack'
     x = latest_version
     pack_format = pack_format or \
-                  pack_formats.get(x := input(f'Pack Format/Minecraft Version ({x}):')) or \
-                  int(x or next(iter(pack_formats.values())))
+        pack_formats.get(x := input(f'Pack Format/Minecraft Version ({x}):')) or \
+        int(x or next(iter(pack_formats.values())))
     description = description or input(f"Description (Datapack '{name}' for version {x}): ") or \
-                  f"Datapack '{name}' for version {x}"
+        f"Datapack '{name}' for version {x}"
     sources = os.path.join(output, f'data/{namespace}/sources')
     try:
         os.makedirs(sources)
