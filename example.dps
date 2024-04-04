@@ -1,9 +1,0 @@
-x = 0
-b = 2
-/should be ignored
-/function example:
-    /please work
-/function:
-    /execute as @e[type=pig] run function:
-        /kill @s
-        /say I'm d{e}ad! ${b}

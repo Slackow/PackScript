@@ -1,1 +1,7 @@
-".idea"
+.idea
+
+output
+output.zip
+
+*.mcfunction
+/PackScript.code-workspace
