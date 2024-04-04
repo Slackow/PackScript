@@ -218,7 +218,7 @@ def comp(*, input, output, verbose, sources, **_):
                     with open(path, 'w') as w:
                         if isinstance(content, (dict, list)):
                             json.dump(content, w, indent=2)
-                        elif isinstance(content, str):
+                        elif isinstance(content, (str, bytes)):
                             w.write(content)
                         else:
                             raise ValueError(f'Error: invalid content: {content}')
