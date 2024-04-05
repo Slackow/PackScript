@@ -168,9 +168,11 @@ def comp(*, input, output, verbose, sources, **_):
         function_tags: dict[str, list[str]] = {}
         other: dict[str, dict[str, object]] = {}
         for namespace in namespaces:
-            if not sources:
-                shutil.rmtree(os.path.join(output_folder, 'data', namespace, 'sources'))
-
+            try:
+                if not sources:
+                    shutil.rmtree(os.path.join(output_folder, 'data', namespace, 'sources'))
+            except NotADirectoryError:
+                pass
             func_files: dict[str, list[str]] = {'': []}
             func_stack = ['']
             capturer_stack = []

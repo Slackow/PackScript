@@ -17,3 +17,8 @@ def only_one_command(definer):
         /tellraw @a "look ma I'm using quotes \\/!"
         /tellraw @a[name="Slackow"] "say \"lol\""
     only_one_command(say)
+
+create loot_tables trapped_chest -> {
+    'm': 10,
+    'woah': 20
+}
