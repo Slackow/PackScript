@@ -10,8 +10,8 @@ import zipfile
 DATA_EXT = 'dps'
 FUNC_EXT = 'fps'
 
-version = '0.1.0'
-latest_version = '1.20.4'
+__version__ = '0.1.0'
+latest_mc_version = '1.20.4'
 namespace_re = re.compile(r'[a-z0-9-_]+')
 
 
@@ -38,17 +38,24 @@ def ns(resource: str, /, *, default: str = 'minecraft'):
     return resource if ':' in resource else f'{default}:{resource}'
 
 
-def comp_file(func_files: dict[str, list[str]], parent: str, filename: str, globals: list[object],
-              function_tags: dict, namespace='minecraft', verbose=False) -> None:
+func_re = re.compile(r'(?<!-)\bfunction\b(?!-)')
+
+
+def right_most_function(contents):
+    # Use finditer to get match objects, which include the start and end positions of each match
+    matches = list(func_re.finditer(contents))
+    return matches[-1].end() if matches else None
+
+
+def comp_file(parent: str, filename: str, globals: list[object], namespace='minecraft', verbose=False):
     command_re = re.compile(r'([\t ]*)/(.*)')
-    interpolation_re = re.compile(r'\$\{\{(.*?)}}|\$([a-zA-Z_]\w*)')
+    interpolation_re = re.compile(r'\$\{\{(.*?)}}|(?<!^)\$([a-zA-Z_]\w*)')
     create_statement_re = re.compile(r'([\t ]*)create\b[ \t]*([\w/]+)\b[ \t]*([a-z\d:/_.-]*)[ \t]*->(.*)')
     code = []
     concat_line = None
     with open(os.path.join(parent, filename), 'r') as r:
         for line in r:
             line = line.rstrip()
-
             if concat_line is not None:
                 line = f'{concat_line}{line.lstrip()}'
                 concat_line = None
@@ -62,34 +69,18 @@ def comp_file(func_files: dict[str, list[str]], parent: str, filename: str, glob
                 # replace { and } with other sequences, so they don't interfere with f string
                 contents = contents.replace('{', '{{').replace('}', '}}')
                 # replace interpolation with value \1\2 is a hack lmao
+                # It's basically grabbing from either the first or second group, since they're mutually exclusive
                 contents = interpolation_re.sub(r'{\1\2}', contents)
                 extra_line = None
                 if contents.endswith(':'):
-                    func_re = re.compile(
-                        r'function\b[ \t]*'
-                        r'([a-z\d:/_-]*)\b[\t ]*(?:\['
-                        r'([a-z\d:/_, -]*)])?[\t ]*:$')
-                    func_match = func_re.search(contents)
-                    # print('func: ', line)
-                    if not func_re:
-                        raise ValueError('Command ends with colon but does not contain function: '
-                                         f'{command_re}')
-                    func_name, tags = func_match.groups()
-                    if func_name == '':
-                        func_name = f'{namespace}:anon/function'
-                    func_name = ns(func_name, default=namespace)
-                    if func_name in func_files:
-                        x = 1
-                        while f'{func_name}_{x}' in func_files:
-                            x += 1
-                        func_name = f'{func_name}_{x}'
-                    func_files[func_name] = []
-                    if tags:
-                        for tag in tags.split(','):
-                            tag = ns(tag.strip())
-                            function_tags.setdefault(tag, []).append(func_name)
-                    extra_line = f'{indent}while __function__("{func_name}"):'
-                    contents = f'{contents[:func_match.span()[0]]}function {func_name}'
+                    func_start = right_most_function(contents)
+                    print('func: ', line)
+                    if func_start is None:
+                        raise ValueError(f'Command {contents!r} ends with colon but does not contain function')
+                    func_name = contents[func_start:-1].strip()
+                    code.append(f'{indent}__f = __function_name__(f"{func_name}")')
+                    contents = f'{contents[:func_start]} {{__f}}'
+                    extra_line = f'{indent}with __function__(__f):'
                 code.append(f'{indent}__line__(rf""" {contents} """[1:-1])')
                 if extra_line:
                     code.append(extra_line)
@@ -98,17 +89,21 @@ def comp_file(func_files: dict[str, list[str]], parent: str, filename: str, glob
                 if create_match:
                     indent, file_type, name, data = create_match.groups()
                     name = ns(name, default=namespace)
-                    code.append(f'{indent}__other__("{file_type}")["{name}"] ={data}')
+                    code.append(f'{indent}__other__("{file_type}")["{name}"]={data}')
                 else:
                     code.append(line)
     print(f'{parent}/{filename}')
     pyth = '\n'.join(code)
     if verbose:
-        print(pyth)
+        max_len = len(str(len(code)))
+        for i, ln in enumerate(code, start=1):
+            print(f'{i:>{max_len}}: {ln}')
     exec(pyth, {func.__name__: func for func in globals})
 
 
-def build_functions(fun_stack: list, capturer_stack: list, files: dict, other: dict):
+def build_functions(func_stack: list, capturer_stack: list, func_files: dict,
+                    other: dict, namespace='minecraft', function_tags=None):
+
     def __other__(s: str):
         return other.setdefault(s, {})
 
@@ -116,15 +111,40 @@ def build_functions(fun_stack: list, capturer_stack: list, files: dict, other: d
         if capturer_stack:
             capturer_stack[-1].append(ln)
         else:
-            files[fun_stack[-1]].append(ln)
+            func_files[func_stack[-1]].append(ln)
 
-    def __function__(fun_name: str):
-        if fun_stack[-1] == fun_name:
-            fun_stack.pop()
-            return False
-        else:
-            fun_stack.append(fun_name)
-            return True
+    def __function_name__(func_def: str):
+        func_match = re.fullmatch(r'^([a-z\d:/_-]*)[ \t]*(?:\[([a-z\d:/_, -]*)])?$', func_def)
+        if not func_match:
+            raise ValueError(f'Invalid function definition: {func_def!r}')
+        func_name, tags = func_match.groups()
+        if func_name == '':
+            func_name = f'{namespace}:anon/function'
+        func_name = ns(func_name, default=namespace)
+        if func_name in func_files:
+            x = 1
+            while f'{func_name}_{x}' in func_files:
+                x += 1
+            func_name = f'{func_name}_{x}'
+        if tags and function_tags is not None:
+            for tag in tags.split(','):
+                tag = ns(tag.strip())
+                function_tags.setdefault(tag, []).append(func_name)
+        func_files[func_name] = []
+        return func_name
+
+    class FuncContext:
+        def __init__(self, func_name: str):
+            self.func_name = func_name
+
+        def __enter__(self):
+            func_stack.append(self.func_name)
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            func_stack.pop()
+
+    def __function__(func_name: str):
+        return FuncContext(func_name)
 
     class Capturer:
         def __enter__(self):
@@ -138,7 +158,7 @@ def build_functions(fun_stack: list, capturer_stack: list, files: dict, other: d
     def capture_lines():
         return Capturer()
 
-    return [__other__, __line__, __function__, capture_lines]
+    return [__other__, __line__, __function_name__, __function__, capture_lines]
 
 
 def comp(*, input, output, verbose, sources, **_):
@@ -177,13 +197,13 @@ def comp(*, input, output, verbose, sources, **_):
             func_stack = ['']
             capturer_stack = []
 
-            functions = build_functions(func_stack, capturer_stack, func_files, other)
+            functions = build_functions(func_stack, capturer_stack, func_files, other, namespace, function_tags)
             working_folder = os.path.join(input, f'data/{namespace}/sources')
             try:
                 for filename in os.listdir(working_folder):
                     if filename.endswith(f'.{DATA_EXT}'):
-                        comp_file(func_files, working_folder, filename, functions,
-                                  function_tags, namespace, verbose=verbose)
+                        comp_file(working_folder, filename, functions,
+                                  namespace, verbose=verbose)
             except NotADirectoryError:
                 continue
             func_files.pop('')
@@ -197,7 +217,7 @@ def comp(*, input, output, verbose, sources, **_):
                 except FileExistsError:
                     pass
                 with open(path, 'w') as w:
-                    w.write(f'# Generated by Packscript {version}\n' + '\n'.join(content) + '\n')
+                    w.write(f'# Generated by Packscript {__version__}\n' + '\n'.join(content) + '\n')
 
             # <editor-fold defaultstate="collapsed" desc="Move function tags into 'other' dictionary">
 
@@ -248,7 +268,7 @@ def comp(*, input, output, verbose, sources, **_):
 
             functions = build_functions(func_stack, [], func_files, {})
 
-            comp_file(func_files, input, f, functions, {}, verbose=verbose)
+            comp_file(input, f, functions, verbose=verbose)
     for f, content in func_files.items():
         path = os.path.join(output, f'{f.removesuffix(f".{FUNC_EXT}")}.mcfunction')
         with open(path, 'w') as w:
@@ -263,12 +283,13 @@ def gen_template(*, name: str, description: str, pack_format: int, output: str, 
     if not namespace_re.fullmatch(namespace):
         raise ValueError(f'namespace must match regex: /{namespace_re.pattern}/ ({namespace} does not match)')
     name = name or input('Datapack Name (Datapack): ') or 'datapack'
-    x = latest_version
+    x = latest_mc_version
     pack_format = pack_format or \
-        pack_formats.get(x := input(f'Pack Format/Minecraft Version ({x}):')) or \
+        pack_formats.get(x := (input(f'Pack Format/Minecraft Version ({x}): ') or x)) or \
         int(x or next(iter(pack_formats.values())))
     description = description or input(f"Description (Datapack '{name}' for version {x}): ") or \
         f"Datapack '{name}' for version {x}"
+    output = output or input(f'Output Directory ({name.replace(" ", "_")}): ') or name.replace(" ", "_")
     sources = os.path.join(output, f'data/{namespace}/sources')
     try:
         os.makedirs(sources)
@@ -292,11 +313,22 @@ def gen_template(*, name: str, description: str, pack_format: int, output: str, 
 
 def main():
     # Argument parsing
-    parser = argparse.ArgumentParser(description='This is a datapack compiler for Minecraft')
-    subparsers = parser.add_subparsers(dest="command")
+    parser = argparse.ArgumentParser(
+        description='This is a datapack compiler for Minecraft\n'
+                    'Source: https://github.com/Slackow/packscript',
+        formatter_class=argparse.RawTextHelpFormatter,
+        usage='packscript [-V | --version] [-h | --help] <command> [<args>]')
+    parser.add_argument('-V', '--version', help='Print out the version', default=False, action='store_true')
+    subparsers = parser.add_subparsers(dest='command', title='Commands', metavar='')
 
     # create the parser for the "compile" command
-    parser_compile = subparsers.add_parser('compile', aliases=['comp', 'c'], help='Compile the datapack')
+    parser_compile = subparsers.add_parser('compile', aliases=['comp', 'c'],
+                                           help='Compile the datapack. Accepts arguments.\n'
+                                                '"packscript comp --help" for more info',
+                                           description='Compile the datapack\n\n'
+                                                       'Use this command to compile your datapack into a format that '
+                                                       'Minecraft can read.',
+                                           formatter_class=argparse.RawTextHelpFormatter)
     parser_compile.add_argument('-o', '--output', type=str, help='Output directory', default='output')
     parser_compile.add_argument('-i', '--input', type=str, help='Input directory', default='.')
     parser_compile.add_argument('-v', '--verbose', help='Print Generated Python Code', default=False,
@@ -305,7 +337,14 @@ def main():
                                 action='store_true')
 
     # create the parser for the "generate" command
-    parser_generate = subparsers.add_parser('generate', aliases=['gen', 'g'], help='Generate datapack template')
+    parser_generate = subparsers.add_parser('generate', aliases=['gen', 'g'],
+                                            help='Generate datapack template (interactively). Accepts arguments.\n'
+                                                 '"packscript gen --help" for more info',
+                                            description='Generate a new datapack template\n\n'
+                                                        'Use this command to create a new datapack template, setting '
+                                                        'up a basic structure for your project. '
+                                                        'Information can be provided in args or interactively',
+                                            formatter_class=argparse.RawTextHelpFormatter)
     parser_generate.add_argument('-o', '--output', type=str, help='Output directory', default='')
     parser_generate.add_argument('-N', '--name', type=str, help='Name of the datapack', default='')
     parser_generate.add_argument('-n', '--namespace', type=str, help='Custom namespace name', default='')
@@ -315,7 +354,9 @@ def main():
     args = parser.parse_args()
 
     args_dict = {key.replace('-', '_'): val for key, val in vars(args).items()}
-    if args.command is None:
+    if args.version:
+        print(f'Packscript {__version__}')
+    elif args.command is None:
         parser.print_help()
     elif args.command.startswith('c'):
         comp(**args_dict)

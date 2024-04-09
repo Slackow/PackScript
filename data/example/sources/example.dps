@@ -1,24 +1,33 @@
+# Full regular python is fully allowed and the default
+import functools
 
-def only_one_command(definer):
-    with capture_lines() as lines:
-        /gamerule commandBlockOutput false
-        definer()
-        /setblock ~ ~1 ~ command_block{auto:1b,Command:"fill ~ ~ ~ ~ ~-3 ~ air"}
-        /kill @e[type=command_block_minecart,distance=..1]
-    def escape(ln):
-        return ln.replace("\\", "\\\\").replace("'", "\\'")
-    main = ','.join(f"{{id:command_block_minecart,Command:'{escape(ln)}'}}" for ln in lines)
-    /summon falling_block ~ ~1 ~ {BlockState:{Name:redstone_block},Passengers:[{id:falling_block,BlockState:{Name:activator_rail}},$main]}
-/execute run say hey
-/function ooc:
-    def say(): # definer
-        /say as second lame command
-        /say third lamer command lol
-        /tellraw @a "look ma I'm using quotes \\/!"
-        /tellraw @a[name="Slackow"] "say \"lol\""
-    only_one_command(say)
+@functools.lru_cache
+def fibonacci(n):
+    return n if n < 2 else fibonacci(n - 1) + fibonacci(n - 2)
+# Lines starting with slashes get interpreted as commands, in order to add those commands to files
+# They must be part of a function statement like the following:
+# function statements are any commands that end with "function", and optional names and tags
+# Not including a namespace for the function name will default it to the same namespace as the dps file
+# function tags without namespaces default to the "minecraft" namespace
+/function tick [tick]:
+    /execute as @a at @s run function:
+        /title @s actionbar "Hey"
+        /fill ~10 ~10 ~10 ~-10 ~-10 ~-10 air replace short_grass
+# Generate 10 functions that print fibonacci numbers
+for function in range(1, 10 + 1):
 
-create loot_tables trapped_chest -> {
-    'm': 10,
-    'woah': 20
+    /execute as @e[tag=function] run function fibonacci_num_$i:
+        /tellraw @a "Fib #$i: ${fibonacci(i)}"
+
+/function say_stuff:
+    /$say packscript> $(message) < actual working macro parameter
+    /say packscript> $(message) < that is just text
+    /say packscript> 2 + 2 = ${2 + 2} < this works because it is compile time
+# Create statements are also minimally highlighted (more info about these constructs on packscript's repo)
+create tags/blocks chests -> {
+    'values': [
+        'chest',
+        'trapped_chest',
+        'ender_chest'
+    ]
 }
