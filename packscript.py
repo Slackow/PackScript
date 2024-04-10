@@ -73,13 +73,13 @@ def comp_file(parent: str, filename: str, globals: list[object], namespace='mine
                 contents = interpolation_re.sub(r'{\1\2}', contents)
                 extra_line = None
                 if contents.endswith(':'):
-                    func_start = right_most_function(contents)
-                    print('func: ', line)
-                    if func_start is None:
+                    func_def_start = right_most_function(contents)
+                    # print('func: ', line)
+                    if func_def_start is None:
                         raise ValueError(f'Command {contents!r} ends with colon but does not contain function')
-                    func_name = contents[func_start:-1].strip()
-                    code.append(f'{indent}__f = __function_name__(f"{func_name}")')
-                    contents = f'{contents[:func_start]} {{__f}}'
+                    func_def = contents[func_def_start:-1].strip()
+                    code.append(f'{indent}__f, __extra = __function_name__(f"{func_def}")')
+                    contents = f'{contents[:func_def_start]} {{__f}}{{__extra}}'
                     extra_line = f'{indent}with __function__(__f):'
                 code.append(f'{indent}__line__(rf""" {contents} """[1:-1])')
                 if extra_line:
@@ -113,25 +113,29 @@ def build_functions(func_stack: list, capturer_stack: list, func_files: dict,
         else:
             func_files[func_stack[-1]].append(ln)
 
+    func_def_re = re.compile(r'^([a-z\d:/_-]*)[ \t]*(?:\[([a-z\d:/_, -]*)](.*))?$')
+
     def __function_name__(func_def: str):
-        func_match = re.fullmatch(r'^([a-z\d:/_-]*)[ \t]*(?:\[([a-z\d:/_, -]*)])?$', func_def)
-        if not func_match:
+        func_def_match = func_def_re.fullmatch(func_def)
+        if not func_def_match:
             raise ValueError(f'Invalid function definition: {func_def!r}')
-        func_name, tags = func_match.groups()
+        func_name, tags, extra = func_def_match.groups()
         if func_name == '':
             func_name = f'{namespace}:anon/function'
+            if func_name in func_files:
+                x = 1
+                while f'{func_name}_{x}' in func_files:
+                    x += 1
+                func_name = f'{func_name}_{x}'
         func_name = ns(func_name, default=namespace)
         if func_name in func_files:
-            x = 1
-            while f'{func_name}_{x}' in func_files:
-                x += 1
-            func_name = f'{func_name}_{x}'
+            raise ValueError(f'Duplicate function name: {func_name!r}')
         if tags and function_tags is not None:
             for tag in tags.split(','):
                 tag = ns(tag.strip())
                 function_tags.setdefault(tag, []).append(func_name)
         func_files[func_name] = []
-        return func_name
+        return func_name, extra
 
     class FuncContext:
         def __init__(self, func_name: str):
@@ -194,8 +198,8 @@ def comp(*, input, output, verbose, sources, **_):
             except NotADirectoryError:
                 pass
             func_files: dict[str, list[str]] = {'': []}
-            func_stack = ['']
-            capturer_stack = []
+            func_stack: list[str] = ['']
+            capturer_stack: list[str] = []
 
             functions = build_functions(func_stack, capturer_stack, func_files, other, namespace, function_tags)
             working_folder = os.path.join(input, f'data/{namespace}/sources')
@@ -287,32 +291,32 @@ def gen_template(*, name: str, description: str, pack_format: int, output: str, 
     pack_format = pack_format or \
         pack_formats.get(x := (input(f'Pack Format/Minecraft Version ({x}): ') or x)) or \
         int(x or next(iter(pack_formats.values())))
-    description = description or input(f"Description (Datapack '{name}' for version {x}): ") or \
-        f"Datapack '{name}' for version {x}"
-    output = output or input(f'Output Directory ({name.replace(" ", "_")}): ') or name.replace(" ", "_")
+    description = description or input(f'Description (Datapack {name!r} for version {x}): ') or \
+        f'Datapack {name!r} for version {x}'
+    output = output or input(f'Output Directory ({name.replace(" ", "_")}): ') or name.replace(' ', '_')
     sources = os.path.join(output, f'data/{namespace}/sources')
     try:
         os.makedirs(sources)
     except FileExistsError:
         pass
     with open(os.path.join(os.path.join(sources, f'main.{DATA_EXT}')), 'w') as w:
-        w.write(inspect.cleandoc(f"""
+        w.write(inspect.cleandoc(f'''
                 /function tick [tick]:
-                    pass
+                    /seed
                 /function load [load]:
-                    /say loaded {name}"""))
+                    /tellraw @a "Loaded {name}"
+'''))
 
     with open(os.path.join(output, 'pack.mcmeta'), 'w') as w:
         json.dump({
-            "pack": {
-                "pack_format": pack_format,
-                "description": description
+            'pack': {
+                'pack_format': pack_format,
+                'description': description
             }
         }, w, indent=4)
 
 
 def main():
-    # Argument parsing
     parser = argparse.ArgumentParser(
         description='This is a datapack compiler for Minecraft\n'
                     'Source: https://github.com/Slackow/packscript',
@@ -321,7 +325,7 @@ def main():
     parser.add_argument('-V', '--version', help='Print out the version', default=False, action='store_true')
     subparsers = parser.add_subparsers(dest='command', title='Commands', metavar='')
 
-    # create the parser for the "compile" command
+    # "compile" command
     parser_compile = subparsers.add_parser('compile', aliases=['comp', 'c'],
                                            help='Compile the datapack. Accepts arguments.\n'
                                                 '"packscript comp --help" for more info',
@@ -331,12 +335,12 @@ def main():
                                            formatter_class=argparse.RawTextHelpFormatter)
     parser_compile.add_argument('-o', '--output', type=str, help='Output directory', default='output')
     parser_compile.add_argument('-i', '--input', type=str, help='Input directory', default='.')
-    parser_compile.add_argument('-v', '--verbose', help='Print Generated Python Code', default=False,
+    parser_compile.add_argument('-v', '--verbose', help='Print generated python code.', default=False,
                                 action='store_true')
-    parser_compile.add_argument('-S', '--sources', help='Include source files in output', default=False,
+    parser_compile.add_argument('-S', '--sources', help='Include source files in output.', default=False,
                                 action='store_true')
 
-    # create the parser for the "generate" command
+    # "generate" command
     parser_generate = subparsers.add_parser('generate', aliases=['gen', 'g'],
                                             help='Generate datapack template (interactively). Accepts arguments.\n'
                                                  '"packscript gen --help" for more info',
