@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import zipfile
 
 DATA_EXT = 'dps'
@@ -53,7 +54,8 @@ def comp_file(parent: str, filename: str, globals: list[object], namespace='mine
     create_statement_re = re.compile(r'([\t ]*)create\b[ \t]*([\w/]+)\b[ \t]*([a-z\d:/_.-]*)[ \t]*->(.*)')
     code = []
     concat_line = None
-    with open(os.path.join(parent, filename), 'r') as r:
+    curr_file = os.path.join(parent, filename)
+    with open(curr_file, 'r') as r:
         for line in r:
             line = line.rstrip()
             if concat_line is not None:
@@ -92,13 +94,16 @@ def comp_file(parent: str, filename: str, globals: list[object], namespace='mine
                     code.append(f'{indent}__other__("{file_type}")["{name}"]={data}')
                 else:
                     code.append(line)
-    print(f'{parent}/{filename}')
+    print(curr_file)
     pyth = '\n'.join(code)
     if verbose:
         max_len = len(str(len(code)))
         for i, ln in enumerate(code, start=1):
             print(f'{i:>{max_len}}: {ln}')
+    old_path = sys.path[:]
+    sys.path.insert(0, parent)
     exec(pyth, {func.__name__: func for func in globals})
+    sys.path = old_path
 
 
 def build_functions(func_stack: list, capturer_stack: list, func_files: dict,
@@ -282,11 +287,12 @@ def comp(*, input, output, verbose, sources, **_):
 def gen_template(*, name: str, description: str, pack_format: int, output: str, namespace: str, **_):
     if not all((name, description, pack_format, output, namespace)):
         print('Leave a field empty to have it default')
-    namespace = namespace or input('Namespace (main): ') or 'main'
+    name = name or input('Datapack Name (Datapack): ') or 'Datapack'
+    def_ns = re.sub(r'\W', '-', name.lower().replace(' ', '_'))
+    namespace = namespace or input(f'Namespace ({def_ns}): ') or def_ns
     namespace = re.sub(r'\W', '-', namespace.lower().replace(' ', '_'))
     if not namespace_re.fullmatch(namespace):
-        raise ValueError(f'namespace must match regex: /{namespace_re.pattern}/ ({namespace} does not match)')
-    name = name or input('Datapack Name (Datapack): ') or 'datapack'
+        raise ValueError(f'Namespace must match regex: /{namespace_re.pattern}/ ({namespace} does not match)')
     x = latest_mc_version
     pack_format = pack_format or \
         pack_formats.get(x := (input(f'Pack Format/Minecraft Version ({x}): ') or x)) or \
