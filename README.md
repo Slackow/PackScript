@@ -129,7 +129,7 @@ It's unlikely for this to be useful though, as such a function could be pulled t
 ## Create Statements
 
 Create statements are used for generating non-function files, mainly JSON. Currently, 
-they don't support interpolation, which can be circumvented using the internal `__other__` function.
+they don't support interpolation in determining their names/type, which can be circumvented using the internal `__other__` function.
 See the Python output below to learn how.
 
 Their values are allowed to be lists, dictionaries, strings, or bytes.
