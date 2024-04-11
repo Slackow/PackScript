@@ -146,7 +146,7 @@ def build_functions(func_stack: list, capturer_stack: list, func_files: dict,
                 tag = ns(tag.strip())
                 function_tags.setdefault(tag, []).append(func_name)
         func_files[func_name] = []
-        return func_name, extra
+        return func_name, (extra or '')
 
     class FuncContext:
         def __init__(self, func_name: str):
