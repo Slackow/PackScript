@@ -1,2 +1,4 @@
 /functionscript test
 /lol ${10 - 1}
+/#function additional function a:
+    /seed

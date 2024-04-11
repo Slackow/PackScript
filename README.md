@@ -4,7 +4,7 @@ Datapacks can often have repetitive files or files that really
 should be together, that are not. There are many tools that already that solve these problems but 
 this tool has some advantages:
 ## Direct use of Commands
-This tool has no knowledge of the syntax of any individual mc command, this makes it version agnostic
+This tool has no knowledge of the syntax of any individual Minecraft command, this makes it version agnostic
 and means there is no need to learn a new way to write commands.
 ## Extension of Python
 If you know Python you can leverage that knowledge to use this tool, since
@@ -15,7 +15,7 @@ easy to add to your path or relocate.
 ## Simplicity
 The entire language adds very few constructs (see below) that are relatively simple to
 understand. These constructs give you the power to add commands to functions,
-generate any other kind of file (especially JSON) easily.
+and generate any other kind of file (especially JSON) easily.
 
 # Syntax Highlighting
 There is an associated syntax highlighter for VSCode with this project.
@@ -28,8 +28,7 @@ Get it [here](https://marketplace.visualstudio.com/items?itemName=Slackow.ps-sup
 ## Command Lines
 This is the main feature behind PackScript:
 
-Command lines start with a '/' and are treated as commands, not Python code. To continue a command on the next line,
-end with '\'. The next line’s leading whitespace is ignored.
+Command lines start with a `/` and are treated as commands instead of Python.
 
 When not inside a function, command lines do nothing.
 
@@ -61,7 +60,7 @@ There are three main components of function definitions, they may all be omitted
 2. Tags: `tag1, tag2`
 3. Extra: `with storage args`
 
-- **Name**: Placed right after `function` Specifies the function's location within the datapack.
+- **Name**: Placed right after `function`. Specifies the function's location within the datapack.
 Defaults to the namespace of the source file if omitted.
 
 - **Tags**: Placed within square brackets. Automatically generates function tags. 
@@ -79,7 +78,7 @@ Any text before the function definition will appear in the final line but is not
 
 `/schedule function [] 5t:`
 
-`/function sleep [] {duration:5}:`
+`/function send_message [] {message:"Vital Message"}:`
 
 `/function minecraft:func []:`
 
@@ -264,32 +263,38 @@ add lines or create new files.
 Most files shown so far have been `.dps` files, standing for DataPackScript,
 but there's also FunctionPackScript with `.fps` files. These are contained in the root of the input directory instead
 of under a proper datapack with a namespace underneath sources, these are meant for generating independent
-function files easily, usually those with repetitive lines. In these files you cannot create more functions or use create statements,
-as the output is always a single `mcfunction` file
+function files easily, usually those with repetitive lines. In these files you cannot use create statements, but you can generate
+additional functions. All the generated function files
+will have their namespace ignored and be generated in the same directory
+as the main generated function.
 
 # The CLI
 This tool has two main actions it can perform, compiling and generating.
 - `python3 packscript.py c` (you can also use compile or comp)
-- `python3 packscript.py g` (you can also use generate or gen)
+- `python3 packscript.py init`
 
 More actions:
 - `python3 packscript.py --help` list general help
 - `python3 packscript.py --version` print the version of packscript
 - `python3 packscript.py c --help` print the help for compiling
-- `python3 packscript.py g --help` print the help for generating
+- `python3 packscript.py init --help` print the help for initializing a datapack
 ## Compile Options
 - `-i/--input <dir>` specify the directory of the pack you are compiling defaults to current dir.
 - `-o/--output <dir/zip>` specify the output of the pack (can output zip too) defaults to `output`
 - `-s/--sources` output the source files into the resulting pack, by default they get deleted
 - `-v/--verbose` print out all the generated Python code with line numbers. Very good for debugging.
 
-## Generate Options
-When generate is called missing options it will prompt you to interactively fill them, this is the recommended way of
+## Init Options
+When init is called missing any options, it will prompt you to interactively fill them, this is the recommended way of
 using this action.
 
 You can also specify options using flags
 
-ex: `python3 packscript.py g --output "Datapack" --name "Datapack" --namespace "main" --description "Datapack for version 1.20.4" --pack-format 26`
+ex: `python3 packscript.py init --output "Datapack" --name "Datapack" --namespace "main" --description "Datapack for version 1.20.4" --pack-format 26`
+
+it's preferable to do just call the following instead:
+
+`python3 packscript.py init`
 
 ## Compile Action
 When a PackScript file is being compiled it will first print its location to the console, this is so if an error is encountered
@@ -323,7 +328,7 @@ In this case it's because there's a letter before the command line, making it ge
 2. **Download PackScript.** You can find `packscript.py`
    [here](https://github.com/Slackow/PackScript/releases/latest)
 3. **Setup Environment.** Place the `packscript.py` file into your working directory
-4. **Create A Datapack.** Run `python3 packscript.py generate` in order to create a datapack with
+4. **Create A Datapack.** Run `python3 packscript.py init` in order to create a datapack with
    PackScript. You'll be prompted for information about the datapack.
    You should have a new datapack, you can put files in there as usual for them to
    be outputted, files in `<pack>/data/*/sources/*.dps` and `<pack>/*.fps` will be interpreted as PackScript
