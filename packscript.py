@@ -8,7 +8,7 @@ import shutil
 import sys
 import zipfile
 
-__version__ = '0.1.0'
+__version__ = '0.1.1'
 latest_mc_version = '1.20.4'
 
 # # # # # # # # # # # # # # # # # # # # # #
@@ -102,19 +102,28 @@ def comp_file(parent: str, filename: str, globals: list[object], namespace='mine
                     code.append(line)
     print(curr_file)
     pyth = '\n'.join(code)
-    if verbose:
+
+    def print_code(file=sys.stdout):
         max_len = len(str(len(code)))
         for i, ln in enumerate(code, start=1):
-            print(f'{i:>{max_len}}: {ln}')
+            print(f'{i:>{max_len}}: {ln}', file=file)
+
+    if verbose:
+        print_code()
     old_path = sys.path[:]
     sys.path.insert(0, parent)
-    exec(pyth, {func.__name__: func for func in globals})
-    sys.path = old_path
+    try:
+        exec(pyth, {func.__name__: func for func in globals})
+    except Exception as e:
+        print('Error in:', curr_file, file=sys.stderr)
+        print_code(sys.stderr)
+        raise e
+    finally:
+        sys.path = old_path
 
 
 def build_functions(func_stack: list, capturer_stack: list, func_files: dict,
                     other: dict, namespace='minecraft', function_tags=None):
-
     def __other__(s: str):
         return other.setdefault(s, {})
 
@@ -206,12 +215,12 @@ def comp(*, input, output, verbose, sources, **_):
 
         function_tags: dict[str, list[str]] = {}
         other: dict[str, dict[str, object]] = {}
-        for namespace in namespaces:
+        for namespace in sorted(namespaces):
             try:
                 if not sources:
                     shutil.rmtree(os.path.join(output_folder, 'data', namespace, 'sources'))
-            except NotADirectoryError:
-                pass
+            except IOError:
+                continue
             func_files: dict[str, list[str]] = {'': []}
             func_stack: list[str] = ['']
             capturer_stack: list[str] = []
@@ -223,7 +232,7 @@ def comp(*, input, output, verbose, sources, **_):
                     if filename.endswith(f'.{DATA_EXT}'):
                         comp_file(working_folder, filename, functions,
                                   namespace, verbose=verbose)
-            except NotADirectoryError:
+            except IOError:
                 continue
             func_files.pop('')
             # Iterate through generated functions

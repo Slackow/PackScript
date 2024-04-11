@@ -1,6 +1,4 @@
 /function tick [tick]:
-    pass
-/function:
-    x = None
+    /seed
 /function load [load]:
     /say loaded Datapack
