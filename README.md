@@ -318,14 +318,14 @@ The line with the error will get printed like this:
 ```
 In this case it's because there's a letter before the command line, making it get interpreted as regular Python.
 # Get Started
-1. **Install Python** Get [Python3](https://www.python.org/downloads/) and
+1. **Install Python.** Get [Python3](https://www.python.org/downloads/) and
    make sure it's in your path. (You can check by running `python3 -V` in your terminal)
-2. **Download PackScript** You can find `packscript.py`
+2. **Download PackScript.** You can find `packscript.py`
    [here](https://github.com/Slackow/PackScript/releases/latest)
-3. **Setup Environment** Place the `packscript.py` file into your working directory
-4. **Create A Datapack** Run `python3 packscript.py generate` in order to create a datapack with
+3. **Setup Environment.** Place the `packscript.py` file into your working directory
+4. **Create A Datapack.** Run `python3 packscript.py generate` in order to create a datapack with
    PackScript. You'll be prompted for information about the datapack.
    You should have a new datapack, you can put files in there as usual for them to
    be outputted, files in `<pack>/data/*/sources/*.dps` and `<pack>/*.fps` will be interpreted as PackScript
    on compilation. By default, you will find a main.dps file there.
-5. **Compile Datapack** To compile, run `python3 packscript.py compile -i <datapack directory> -o <output>`
+5. **Compile Datapack.** To compile, run `python3 packscript.py compile -i <datapack directory> -o <output>`
