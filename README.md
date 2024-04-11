@@ -278,8 +278,8 @@ More actions:
 - `python3 packscript.py c --help` print the help for compiling
 - `python3 packscript.py g --help` print the help for generating
 ## Compile Options
-- `-i/--input` specify the directory of the pack you are compiling defaults to current dir.
-- `-o/--output` specify the output of the pack (can output zip too) defaults to `output`
+- `-i/--input <dir>` specify the directory of the pack you are compiling defaults to current dir.
+- `-o/--output <dir/zip>` specify the output of the pack (can output zip too) defaults to `output`
 - `-s/--sources` output the source files into the resulting pack, by default they get deleted
 - `-v/--verbose` print out all the generated Python code with line numbers. Very good for debugging.
 
