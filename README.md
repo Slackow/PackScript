@@ -269,7 +269,7 @@ will have their namespace ignored and be generated in the same directory
 as the main generated function.
 
 # The CLI
-This tool has two main actions it can perform, compiling and generating.
+This tool has two main actions it can perform: compiling packs and initializing templates.
 - `python3 packscript.py c` (you can also use compile or comp)
 - `python3 packscript.py init`
 
