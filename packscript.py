@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 import argparse
-import inspect
 import json
 import os
 import re
 import shutil
 import sys
-import zipfile
 
-__version__ = '0.1.1'
+__version__ = '0.1.2'
 latest_mc_version = '1.20.4'
 
 # # # # # # # # # # # # # # # # # # # # # #
@@ -44,7 +42,7 @@ def ns(resource: str, /, *, default: str = 'minecraft'):
     return resource if ':' in resource else f'{default}:{resource}'
 
 
-namespace_re = re.compile(r'[a-z0-9-_]+')
+namespace_re = re.compile(r'[a-z0-9-_.]+')
 func_re = re.compile(r'(?<!-)\bfunction\b(?!-)')
 
 
@@ -237,14 +235,14 @@ def comp(*, input, output, verbose, sources, **_):
             func_files.pop('')
             # Iterate through generated functions
             for name, content in func_files.items():
-                path = os.path.join(output_folder, f'data/{name.replace(":", "/functions/")}.mcfunction')
+                mcfunction_path = os.path.join(output_folder, f'data/{name.replace(":", "/functions/")}.mcfunction')
                 if not content:
                     continue
                 try:
-                    os.makedirs(os.path.dirname(path))
+                    os.makedirs(os.path.dirname(mcfunction_path))
                 except FileExistsError:
                     pass
-                with open(path, 'w') as w:
+                with open(mcfunction_path, 'w') as w:
                     w.write(get_header() + '\n'.join(content) + '\n')
 
             # <editor-fold defaultstate="collapsed" desc="Move function tags into 'other' dictionary">
@@ -260,12 +258,12 @@ def comp(*, input, output, verbose, sources, **_):
                     name = name.replace(':', f'/{file_type}/')
                     if '.' not in name:
                         name += '.json'
-                    path = os.path.join(output_folder, f'data/{name}')
+                    mcfunction_path = os.path.join(output_folder, f'data/{name}')
                     try:
-                        os.makedirs(os.path.abspath(os.path.join(path, '..')))
+                        os.makedirs(os.path.abspath(os.path.join(mcfunction_path, '..')))
                     except FileExistsError:
                         pass
-                    with open(path, 'w') as w:
+                    with open(mcfunction_path, 'w') as w:
                         if isinstance(content, (dict, list)):
                             json.dump(content, w, indent=2)
                         elif isinstance(content, (str, bytes)):
@@ -273,12 +271,14 @@ def comp(*, input, output, verbose, sources, **_):
                         else:
                             raise ValueError(f'Error: invalid content: {content}')
             if is_zip:
-                def zipdir(path1, ziph):
+                import zipfile
+
+                def zipdir(data_path, ziph):
                     # ziph is zipfile handle
-                    for root, dirs, files1 in os.walk(path1):
-                        for file in files1:
+                    for root, dirs, files in os.walk(data_path):
+                        for file in files:
                             base = str(os.path.join(root, file))
-                            rel = os.path.dirname(path1)
+                            rel = os.path.dirname(data_path)
                             ziph.write(os.path.join(root, file), os.path.relpath(base, rel))
 
                 zipf = zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED)
@@ -299,8 +299,8 @@ def comp(*, input, output, verbose, sources, **_):
             comp_file(input, f, functions, verbose=verbose)
     for f, content in func_files.items():
         f = f[f.find(':') + 1:].replace('/', '_').removesuffix(f'.{FUNC_EXT}')
-        path = os.path.join(output, f'{f}.mcfunction')
-        with open(path, 'w') as w:
+        mcfunction_path = os.path.join(output, f'{f}.mcfunction')
+        with open(mcfunction_path, 'w') as w:
             w.write(get_header() + '\n'.join(content) + '\n')
 
 
@@ -330,11 +330,12 @@ def init_template(*, name: str, description: str, pack_format: int, output: str,
     except FileExistsError:
         pass
     with open(os.path.join(os.path.join(sources, f'main.{DATA_EXT}')), 'w') as w:
+        import inspect
         w.write(inspect.cleandoc(f'''
-                /function tick [tick]:
-                    /seed
-                /function load [load]:
-                    /tellraw @a "Loaded {name}"
+            /function tick [tick]:
+                /seed
+            /function load [load]:
+                /tellraw @a "Loaded {name}"
         '''))
 
     with open(os.path.join(output, 'pack.mcmeta'), 'w') as w:
