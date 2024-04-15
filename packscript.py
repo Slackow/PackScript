@@ -52,7 +52,7 @@ def right_most_function(contents):
     return matches[-1].end() if matches else None
 
 
-def comp_file(parent: str, filename: str, globals: list[object], namespace='minecraft', verbose=False):
+def comp_file(parent: str, filename: str, globals: dict[str, object], namespace='minecraft', verbose=False):
     command_re = re.compile(r'([\t ]*)/(.*)')
     interpolation_re = re.compile(r'\$\{\{(.*?)}}|(?<!^)\$([a-zA-Z_]\w*)')
     create_statement_re = re.compile(r'([\t ]*)create\b[ \t]*([\w/]+)\b[ \t]*([a-z\d:/_.-]*)[ \t]*->(.*)')
@@ -111,7 +111,7 @@ def comp_file(parent: str, filename: str, globals: list[object], namespace='mine
     old_path = sys.path[:]
     sys.path.insert(0, parent)
     try:
-        exec(pyth, {func.__name__: func for func in globals})
+        exec(pyth, globals)
     except Exception as e:
         print('Error in:', curr_file, file=sys.stderr)
         print_code(sys.stderr)
@@ -120,8 +120,8 @@ def comp_file(parent: str, filename: str, globals: list[object], namespace='mine
         sys.path = old_path
 
 
-def build_functions(func_stack: list, capturer_stack: list, func_files: dict,
-                    other: dict, namespace='minecraft', function_tags=None):
+def build_globals(func_stack: list, capturer_stack: list, func_files: dict,
+                  other: dict, namespace='minecraft', function_tags=None):
     def __other__(s: str):
         return other.setdefault(s, {})
 
@@ -180,7 +180,10 @@ def build_functions(func_stack: list, capturer_stack: list, func_files: dict,
     def capture_lines():
         return Capturer()
 
-    return [__other__, __line__, __function_name__, __function__, capture_lines]
+    funcs = [__other__, __line__, __function_name__, __function__, capture_lines]
+    globals: dict = {func.__name__: func for func in funcs}
+    globals.update({'ns': namespace})
+    return globals
 
 
 def get_header():
@@ -223,12 +226,12 @@ def comp(*, input, output, verbose, sources, **_):
             func_stack: list[str] = ['']
             capturer_stack: list[str] = []
 
-            functions = build_functions(func_stack, capturer_stack, func_files, other, namespace, function_tags)
+            globals = build_globals(func_stack, capturer_stack, func_files, other, namespace, function_tags)
             working_folder = os.path.join(input, f'data/{namespace}/sources')
             try:
                 for filename in os.listdir(working_folder):
                     if filename.endswith(f'.{DATA_EXT}'):
-                        comp_file(working_folder, filename, functions,
+                        comp_file(working_folder, filename, globals,
                                   namespace, verbose=verbose)
             except IOError:
                 continue
@@ -294,9 +297,9 @@ def comp(*, input, output, verbose, sources, **_):
             func_stack = [f]
             func_files[f] = []
 
-            functions = build_functions(func_stack, [], func_files, {})
+            globals = build_globals(func_stack, [], func_files, {})
 
-            comp_file(input, f, functions, verbose=verbose)
+            comp_file(input, f, globals, verbose=verbose)
     for f, content in func_files.items():
         f = f[f.find(':') + 1:].replace('/', '_').removesuffix(f'.{FUNC_EXT}')
         mcfunction_path = os.path.join(output, f'{f}.mcfunction')
