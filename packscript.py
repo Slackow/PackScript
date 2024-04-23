@@ -6,7 +6,7 @@ import re
 import shutil
 import sys
 
-__version__ = '0.1.0'
+__version__ = '0.1.2'
 latest_mc_version = '1.20.5'
 
 # # # # # # # # # # # # # # # # # # # # # #
