@@ -324,7 +324,7 @@ def init_template(*, name: str, description: str, pack_format: int, output: str,
             print(f"You must provide a recognized mc version or a pack format, {v!r} is neither.")
     v = v and f' for version {v}'
     description = description or input(f'Description (Datapack {name!r}{v}): ') or \
-        f'Datapack {name!r}{v}'
+                  f'Datapack {name!r}{v}'
     output = output or input(f'Output Directory ({name.replace(" ", "_")}): ') or name.replace(' ', '_')
     sources = os.path.join(output, f'data/{namespace}/sources')
     try:
@@ -358,10 +358,12 @@ def get_data_from_url(url: str, default_context=True, max_redirects=10):
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
     connection = HTTPSConnection(parsed_url.netloc, context=context)
+    path = parsed_url.path + ((parsed_url.query and f"?{parsed_url.query}") or "")
     headers = {'Accept': '*/*', 'User-Agent': 'packscript.py'}
-    connection.request('GET', parsed_url.path, headers=headers)
+    connection.request('GET', path, headers=headers)
     response = connection.getresponse()
     if response.status in range(300, 400) and max_redirects > 0:
+        print(response.getheaders())
         return get_data_from_url(response.getheader('Location'), default_context, max_redirects - 1)
     return response
 
