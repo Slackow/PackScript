@@ -351,24 +351,21 @@ def init_template(*, name: str, description: str, pack_format: int, output: str,
 
 def get_data_from_url(url: str, default_context=True, max_redirects=10):
     import ssl
-    try:
-        from http.client import HTTPSConnection
-        from urllib.parse import urlparse
-        parsed_url = urlparse(url)
-        connection = HTTPSConnection(parsed_url.netloc, context=None if default_context else ssl.SSLContext())
-        headers = {'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'packscript.py'}
-        connection.request('GET', parsed_url.path, headers=headers)
-        response = connection.getresponse()
-        if response.status in range(300, 400) and max_redirects > 0:
-            return get_data_from_url(response.getheader('Location'), default_context, max_redirects - 1)
-        return response
-    except ssl.SSLCertVerificationError as e:
-        print(e, file=sys.stderr)
-        print('There was an issue with your certificates and Python, you should look into that.', file=sys.stderr)
-        if default_context:
-            return get_data_from_url(url, False, max_redirects)
-        else:
-            raise e
+    from http.client import HTTPSConnection
+    from urllib.parse import urlparse
+    parsed_url = urlparse(url)
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    connection = HTTPSConnection(parsed_url.netloc, context=context)
+    headers = {'Accept': '*/*', 'User-Agent': 'packscript.py'}
+    connection.request('GET', parsed_url.path, headers=headers)
+    response = connection.getresponse()
+    if response.status in range(300, 400) and max_redirects > 0:
+        return get_data_from_url(response.getheader('Location'), default_context, max_redirects - 1)
+    elif response.status not in range(200, 300):
+        print(response, file=sys.stderr)
+    return response
 
 
 def get_latest_version(default_context=True) -> str:
@@ -379,7 +376,7 @@ def get_latest_version(default_context=True) -> str:
         json_data = json.loads(data.decode('utf-8'))
         return json_data['tag_name']
     else:
-        raise IOError(f'Could not get latest version status: {response.status}\nbody: {response.read()}')
+        raise IOError(f'Could not get latest version \nstatus: {response.status}\nbody: {response.read()}')
 
 
 def replace_script_with_latest():
@@ -396,7 +393,8 @@ def replace_script_with_latest():
         print(data, file=sys.stderr)
         raise ValueError("Bad data returned")
     else:
-        raise IOError(f'Could not get packscript.py status: {response.status}\nbody:{response.read()}')
+        print(response.getheaders())
+        raise IOError(f'Could not get packscript.py \nstatus: {response.status}\nbody:{response.read()}')
 
 
 def update():
@@ -404,7 +402,7 @@ def update():
     if latest == __version__:
         print(f"Up to date, PackScript {__version__}")
         return
-    print(f"Latest version is {latest}, you have {__version__}.")
+    print(f"Latest version of PackScript is {latest}, you have {__version__}.")
     if [int(x) for x in latest.split('.')] < [int(x) for x in __version__.split('.')]:
         print("You have a future version, not updating.")
         return
