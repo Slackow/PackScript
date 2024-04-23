@@ -363,8 +363,6 @@ def get_data_from_url(url: str, default_context=True, max_redirects=10):
     response = connection.getresponse()
     if response.status in range(300, 400) and max_redirects > 0:
         return get_data_from_url(response.getheader('Location'), default_context, max_redirects - 1)
-    elif response.status not in range(200, 300):
-        print(response, file=sys.stderr)
     return response
 
 
@@ -393,7 +391,6 @@ def replace_script_with_latest():
         print(data, file=sys.stderr)
         raise ValueError("Bad data returned")
     else:
-        print(response.getheaders())
         raise IOError(f'Could not get packscript.py \nstatus: {response.status}\nbody:{response.read()}')
 
 
