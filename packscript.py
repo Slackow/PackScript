@@ -368,9 +368,9 @@ def get_data_from_url(url: str, default_context=True, max_redirects=10):
     return response
 
 
-def get_latest_version(default_context=True) -> str:
+def get_latest_version() -> str:
     url = 'https://api.github.com/repos/Slackow/PackScript/releases/latest'
-    response = get_data_from_url(url, default_context)
+    response = get_data_from_url(url)
     if response.status == 200:
         data = response.read()
         json_data = json.loads(data.decode('utf-8'))
