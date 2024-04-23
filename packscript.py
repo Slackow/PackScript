@@ -7,7 +7,7 @@ import shutil
 import sys
 
 __version__ = '0.1.2'
-latest_mc_version = '1.20.4'
+latest_mc_version = '1.20.5'
 
 # # # # # # # # # # # # # # # # # # # # # #
 # Please set this to your username if you are modifying this script
@@ -20,7 +20,7 @@ def ver(base_version, /, start, end, *, pf):
 
 
 pack_formats = {
-    '1.20.4': 26, '1.20.3': 26, '1.20.2': 18,
+    '1.20.5': 41, '1.20.4': 26, '1.20.3': 26, '1.20.2': 18,
     '1.20.1': 15, '1.20': 15, '1.19.4': 12,
     ** ver('1.19', 1, 3, pf=10),
     '1.19': 10,
@@ -32,7 +32,6 @@ pack_formats = {
     ** ver('1.14', 1, 4, pf=4),
     '1.14': 4, '1.13.2': 4, '1.13.1': 4, '1.13': 4,
 }
-
 
 DATA_EXT = 'dps'
 FUNC_EXT = 'fps'
@@ -350,6 +349,75 @@ def init_template(*, name: str, description: str, pack_format: int, output: str,
         }, w, indent=4)
 
 
+def get_data(url: str, default_context):
+    import ssl
+    from http.client import HTTPSConnection
+    from urllib.parse import urlparse
+    parsed_url = urlparse(url)
+    connection = HTTPSConnection(parsed_url.netloc, context=None if default_context else ssl.SSLContext())
+    headers = {'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'packscript.py'}
+    connection.request('GET', parsed_url.path, headers=headers)
+    return connection.getresponse()
+
+
+def get_latest_version(default_context=True) -> str:
+    import ssl
+    try:
+        url = 'https://api.github.com/repos/Slackow/PackScript/releases/latest'
+        response = get_data(url, default_context)
+        if response.status == 200:
+            data = response.read()
+            json_data = json.loads(data.decode('utf-8'))
+            return json_data['tag_name']
+        else:
+            raise IOError(f'Could not get latest version status: {response.status}\nbody:{response.read()}')
+    except ssl.SSLCertVerificationError as e:
+        print(e, file=sys.stderr)
+        print('There was an issue with your certificates and Python, you should look into that.', file=sys.stderr)
+        if default_context:
+            return get_latest_version(False)
+        else:
+            raise e
+
+
+def replace_script_with_latest(default_context=True):
+    print("Updating PackScript...")
+    import ssl
+    try:
+        url = 'https://github.com/Slackow/PackScript/releases/latest/download/packscript.py'
+        response = get_data(url, default_context)
+        if response.status == 200:
+            data = response.read()
+            if b'\n__version__ = ' in data:
+                with open(sys.argv[0], 'w') as w:
+                    w.write(data.decode('utf-8'))
+                    print("Done!")
+                return
+            print(data, file=sys.stderr)
+            raise ValueError("Bad data returned")
+        else:
+            raise IOError(f'Could not get latest version status: {response.status}\nbody:{response.read()}')
+    except ssl.SSLCertVerificationError as e:
+        print(e, file=sys.stderr)
+        print('There was an issue with your certificates and Python, you should look into that.', file=sys.stderr)
+        if default_context:
+            return replace_script_with_latest(False)
+        else:
+            raise e
+
+
+def update():
+    latest = get_latest_version()
+    if latest == __version__:
+        print(f"Up to date, PackScript {__version__}")
+        return
+    print(f"Latest version is {latest}, you have {__version__}.")
+    if [int(x) for x in latest.split('.')] < [int(x) for x in __version__.split('.')]:
+        print("You have a future version, not updating.")
+        return
+    replace_script_with_latest()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='This is a datapack compiler for Minecraft\n'
@@ -389,6 +457,11 @@ def main():
     parser_init.add_argument('-d', '--description', type=str, help='The description of the datapack', default='')
     parser_init.add_argument('-f', '--pack-format', type=int,
                              help='Pack format (keeps track of compatible versions)', default=0)
+
+    subparsers.add_parser('update', aliases=['u'],
+                          help='Check for PackScript updates, and update if found.',
+                          description='Update PackScript if there is an update available.')
+
     args = parser.parse_args()
 
     args_dict = {key.replace('-', '_'): val for key, val in vars(args).items()}
@@ -398,6 +471,8 @@ def main():
         parser.print_help()
     elif args.command.startswith('c'):
         comp(**args_dict)
+    elif args.command.startswith('u'):
+        update()
     else:
         init_template(**args_dict)
 
