@@ -363,7 +363,6 @@ def get_data_from_url(url: str, default_context=True, max_redirects=10):
     connection.request('GET', path, headers=headers)
     response = connection.getresponse()
     if response.status in range(300, 400) and max_redirects > 0:
-        print(response.getheaders())
         return get_data_from_url(response.getheader('Location'), default_context, max_redirects - 1)
     return response
 
