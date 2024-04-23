@@ -6,7 +6,7 @@ import re
 import shutil
 import sys
 
-__version__ = '0.1.2'
+__version__ = '0.1.0'
 latest_mc_version = '1.20.5'
 
 # # # # # # # # # # # # # # # # # # # # # #
@@ -349,7 +349,7 @@ def init_template(*, name: str, description: str, pack_format: int, output: str,
         }, w, indent=4)
 
 
-def get_data(url: str, default_context):
+def get_data(url: str, default_context, max_redirects=10):
     import ssl
     from http.client import HTTPSConnection
     from urllib.parse import urlparse
@@ -357,7 +357,10 @@ def get_data(url: str, default_context):
     connection = HTTPSConnection(parsed_url.netloc, context=None if default_context else ssl.SSLContext())
     headers = {'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'packscript.py'}
     connection.request('GET', parsed_url.path, headers=headers)
-    return connection.getresponse()
+    response = connection.getresponse()
+    if response.status in range(300, 400) and max_redirects > 0:
+        return get_data(response.getheader('Location'), default_context, max_redirects - 1)
+    return response
 
 
 def get_latest_version(default_context=True) -> str:
@@ -370,7 +373,7 @@ def get_latest_version(default_context=True) -> str:
             json_data = json.loads(data.decode('utf-8'))
             return json_data['tag_name']
         else:
-            raise IOError(f'Could not get latest version status: {response.status}\nbody:{response.read()}')
+            raise IOError(f'Could not get latest version status: {response.status}\nbody: {response.read()}')
     except ssl.SSLCertVerificationError as e:
         print(e, file=sys.stderr)
         print('There was an issue with your certificates and Python, you should look into that.', file=sys.stderr)
@@ -396,7 +399,7 @@ def replace_script_with_latest(default_context=True):
             print(data, file=sys.stderr)
             raise ValueError("Bad data returned")
         else:
-            raise IOError(f'Could not get latest version status: {response.status}\nbody:{response.read()}')
+            raise IOError(f'Could not get packscript.py status: {response.status}\nbody:{response.read()}')
     except ssl.SSLCertVerificationError as e:
         print(e, file=sys.stderr)
         print('There was an issue with your certificates and Python, you should look into that.', file=sys.stderr)
