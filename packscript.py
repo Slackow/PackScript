@@ -324,7 +324,7 @@ def init_template(*, name: str, description: str, pack_format: int, output: str,
             print(f"You must provide a recognized mc version or a pack format, {v!r} is neither.")
     v = v and f' for version {v}'
     description = description or input(f'Description (Datapack {name!r}{v}): ') or \
-                  f'Datapack {name!r}{v}'
+        f'Datapack {name!r}{v}'
     output = output or input(f'Output Directory ({name.replace(" ", "_")}): ') or name.replace(' ', '_')
     sources = os.path.join(output, f'data/{namespace}/sources')
     try:
