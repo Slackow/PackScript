@@ -349,64 +349,54 @@ def init_template(*, name: str, description: str, pack_format: int, output: str,
         }, w, indent=4)
 
 
-def get_data(url: str, default_context, max_redirects=10):
+def get_data_from_url(url: str, default_context=True, max_redirects=10):
     import ssl
-    from http.client import HTTPSConnection
-    from urllib.parse import urlparse
-    parsed_url = urlparse(url)
-    connection = HTTPSConnection(parsed_url.netloc, context=None if default_context else ssl.SSLContext())
-    headers = {'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'packscript.py'}
-    connection.request('GET', parsed_url.path, headers=headers)
-    response = connection.getresponse()
-    if response.status in range(300, 400) and max_redirects > 0:
-        return get_data(response.getheader('Location'), default_context, max_redirects - 1)
-    return response
+    try:
+        from http.client import HTTPSConnection
+        from urllib.parse import urlparse
+        parsed_url = urlparse(url)
+        connection = HTTPSConnection(parsed_url.netloc, context=None if default_context else ssl.SSLContext())
+        headers = {'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'packscript.py'}
+        connection.request('GET', parsed_url.path, headers=headers)
+        response = connection.getresponse()
+        if response.status in range(300, 400) and max_redirects > 0:
+            return get_data_from_url(response.getheader('Location'), default_context, max_redirects - 1)
+        return response
+    except ssl.SSLCertVerificationError as e:
+        print(e, file=sys.stderr)
+        print('There was an issue with your certificates and Python, you should look into that.', file=sys.stderr)
+        if default_context:
+            return get_data_from_url(url, False, max_redirects)
+        else:
+            raise e
 
 
 def get_latest_version(default_context=True) -> str:
-    import ssl
-    try:
-        url = 'https://api.github.com/repos/Slackow/PackScript/releases/latest'
-        response = get_data(url, default_context)
-        if response.status == 200:
-            data = response.read()
-            json_data = json.loads(data.decode('utf-8'))
-            return json_data['tag_name']
-        else:
-            raise IOError(f'Could not get latest version status: {response.status}\nbody: {response.read()}')
-    except ssl.SSLCertVerificationError as e:
-        print(e, file=sys.stderr)
-        print('There was an issue with your certificates and Python, you should look into that.', file=sys.stderr)
-        if default_context:
-            return get_latest_version(False)
-        else:
-            raise e
+    url = 'https://api.github.com/repos/Slackow/PackScript/releases/latest'
+    response = get_data_from_url(url, default_context)
+    if response.status == 200:
+        data = response.read()
+        json_data = json.loads(data.decode('utf-8'))
+        return json_data['tag_name']
+    else:
+        raise IOError(f'Could not get latest version status: {response.status}\nbody: {response.read()}')
 
 
-def replace_script_with_latest(default_context=True):
+def replace_script_with_latest():
     print("Updating PackScript...")
-    import ssl
-    try:
-        url = 'https://github.com/Slackow/PackScript/releases/latest/download/packscript.py'
-        response = get_data(url, default_context)
-        if response.status == 200:
-            data = response.read()
-            if b'\n__version__ = ' in data:
-                with open(sys.argv[0], 'w') as w:
-                    w.write(data.decode('utf-8'))
-                    print("Done!")
-                return
-            print(data, file=sys.stderr)
-            raise ValueError("Bad data returned")
-        else:
-            raise IOError(f'Could not get packscript.py status: {response.status}\nbody:{response.read()}')
-    except ssl.SSLCertVerificationError as e:
-        print(e, file=sys.stderr)
-        print('There was an issue with your certificates and Python, you should look into that.', file=sys.stderr)
-        if default_context:
-            return replace_script_with_latest(False)
-        else:
-            raise e
+    url = 'https://github.com/Slackow/PackScript/releases/latest/download/packscript.py'
+    response = get_data_from_url(url)
+    if response.status == 200:
+        data = response.read()
+        if b'\n__version__ = ' in data:
+            with open(sys.argv[0], 'w') as w:
+                w.write(data.decode('utf-8'))
+                print("Done!")
+            return
+        print(data, file=sys.stderr)
+        raise ValueError("Bad data returned")
+    else:
+        raise IOError(f'Could not get packscript.py status: {response.status}\nbody:{response.read()}')
 
 
 def update():
