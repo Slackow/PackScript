@@ -1,7 +1,7 @@
 .idea
 
-output
-output.zip
+.DS_Store
+*.zip
 
 /*.mcfunction
 /PackScript.code-workspace
