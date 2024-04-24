@@ -1,0 +1,8 @@
+
+/function dir1/dir2/dir3/func:
+    /say hey!
+    /function odir1/dir2/dir5/func:
+        /say same name, different dir.
+        /function what:odir1/dir2/dir5/third_func:
+                /say different namespace!
+# Here's also a comment

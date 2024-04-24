@@ -1,0 +1,6 @@
+/function tick []:
+    /function lol:
+        /function $ns:other
+
+/function other:
+    /say test

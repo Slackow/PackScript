@@ -3,5 +3,5 @@
 output
 output.zip
 
-*.mcfunction
+/*.mcfunction
 /PackScript.code-workspace

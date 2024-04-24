@@ -1,0 +1,4 @@
+/function tick [tick]:
+    /seed
+/function load [load]:
+    /tellraw @a "Loaded BasicTest"
