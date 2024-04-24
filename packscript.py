@@ -6,7 +6,7 @@ import re
 import shutil
 import sys
 
-__version__ = '0.1.2'
+__version__ = '0.1.3'
 latest_mc_version = '1.20.5'
 
 # # # # # # # # # # # # # # # # # # # # # #
@@ -299,6 +299,8 @@ def comp(*, input, output, verbose, sources, **_):
             globals = build_globals(func_stack, [], func_files, {})
 
             comp_file(input, f, globals, verbose=verbose)
+    if func_files:
+        os.makedirs(output)
     for f, content in func_files.items():
         f = f[f.find(':') + 1:].replace('/', '_').removesuffix(f'.{FUNC_EXT}')
         mcfunction_path = os.path.join(output, f'{f}.mcfunction')
