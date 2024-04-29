@@ -7,7 +7,7 @@ import shutil
 import sys
 
 __version__ = '0.1.3'
-latest_mc_version = '1.20.5'
+latest_mc_version = '1.20.6'
 
 # # # # # # # # # # # # # # # # # # # # # #
 # Please set this to your username if you are modifying this script
@@ -15,12 +15,13 @@ modified_by = ''
 # # # # # # # # # # # # # # # # # # # # # #
 
 
-def ver(base_version, /, start, end, *, pf):
+def ver(base_version, start, end, *, pf):
     return {f'{base_version}.{x}': pf for x in range(start, end + 1)}
 
 
 pack_formats = {
-    '1.20.5': 41, '1.20.4': 26, '1.20.3': 26, '1.20.2': 18,
+    '1.20.6': 41, '1.20.5': 41,
+    '1.20.4': 26, '1.20.3': 26, '1.20.2': 18,
     '1.20.1': 15, '1.20': 15, '1.19.4': 12,
     ** ver('1.19', 1, 3, pf=10),
     '1.19': 10,
