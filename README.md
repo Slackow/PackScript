@@ -287,7 +287,7 @@ additional functions. All the generated function files
 will have their namespace ignored and be generated in the same directory
 as the main generated function.
 
-<span id="f1">[1]</span>: In older versions of minecraft (pre 1.21) this folder is `sources` instead. PackScript will automatically figure out which folder name to use based on your pack_format value in your pack.mcmeta. 
+<span id="f1">[1]</span>: In older versions of minecraft (pre 1.21) this folder is `sources` instead. PackScript will automatically figure out which folder name to use based on your pack_format value in your `pack.mcmeta`. 
 
 # The CLI
 This tool has two main actions it can perform: compiling packs and initializing templates.
