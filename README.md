@@ -281,13 +281,13 @@ add lines or create new files.
 # FunctionPackScript
 Most files shown so far have been `.dps` files, standing for DataPackScript,
 but there's also FunctionPackScript with `.fps` files. These are contained in the root of the input directory instead
-of under a proper datapack with a namespace underneath `source`[^1], these are meant for generating independent
+of under a proper datapack with a namespace underneath `source`[<sup>[1]</sup>](#f1), these are meant for generating independent
 function files easily, usually those with repetitive lines. In these files you cannot use create statements, but you can generate
 additional functions. All the generated function files
 will have their namespace ignored and be generated in the same directory
 as the main generated function.
 
-[^1] In older versions of minecraft (pre 1.21) this folder is `sources` instead. PackScript will automatically figure out which folder name to use based on your pack_format value in your pack.mcmeta. 
+<span id="f1">[1]</span>: In older versions of minecraft (pre 1.21) this folder is `sources` instead. PackScript will automatically figure out which folder name to use based on your pack_format value in your pack.mcmeta. 
 
 # The CLI
 This tool has two main actions it can perform: compiling packs and initializing templates.
