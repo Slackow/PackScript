@@ -145,7 +145,7 @@ a String or Bytes object will just be written raw to the file, but I do not know
 
 ```
 === data/main/source/main.dps ===
-create tags/blocks ns:chests -> {
+create tags/block ns:chests -> {
     "values": [
         "chest",
         "trapped_chest",
@@ -155,7 +155,7 @@ create tags/blocks ns:chests -> {
 ```
 outputs
 ```
-=== data/ns/tags/blocks/chests.json ===
+=== data/ns/tags/block/chests.json ===
 {
     "values": [
         "chest",
@@ -170,7 +170,7 @@ Of course, you do not need to specify a literal dictionary right after.
 def tag(*values):
     return {"values": values}
     
-create tags/blocks chests -> \
+create tags/block chests -> \
     tag('chest', 'trapped_chest', 'ender_chest')
 ```
 
