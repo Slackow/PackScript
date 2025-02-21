@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
-import argparse
-import json
-import os
-import re
-import shutil
-import sys
 
+# /// script
+# requires-python = ">=3.12"
+# ///
+__author__ = 'Slackow'
 __version__ = '0.1.5'
+
 latest_mc_version = '1.21.4'
 
 # # # # # # # # # # # # # # # # # # # # # #
 # Please set this to your username if you are modifying this script
 modified_by = ''
 # # # # # # # # # # # # # # # # # # # # # #
+import argparse, json, re, sys, shutil
+from os import chdir
+from pathlib import Path
 
 
 def ver(base_version, start, end, *, pf):
@@ -55,52 +57,63 @@ def right_most_function(contents):
     return matches[-1].end() if matches else None
 
 
-def comp_file(parent: str, filename: str, globals: dict[str, object], namespace='minecraft', verbose=False):
+def version_or_pf(s: str, default=...):
+    res = pack_formats.get(s)
+    if not res:
+        try:
+            return int(s)
+        except ValueError as e:
+            if default is not ...:
+                return default
+            raise e
+    return res
+
+
+def comp_file(parent: Path, filename: str, globals: dict[str, object], namespace='minecraft', verbose=False):
     command_re = re.compile(r'([\t ]*)/(.*)')
     interpolation_re = re.compile(r'\$\{\{(.*?)}}|(?<!^)\$([a-zA-Z_]\w*)')
     create_statement_re = re.compile(r'([\t ]*)create\b[ \t]*([\w/]+)\b[ \t]*([a-z\d:/_.-]*)[ \t]*->(.*)')
     code = []
     concat_line = None
-    curr_file = os.path.join(parent, filename)
-    with open(curr_file, 'r') as r:
-        for line in r:
-            line = line.rstrip()
-            if concat_line is not None:
-                line = f'{concat_line}{line.lstrip()}'
-                concat_line = None
-            if line.endswith('\\'):
-                concat_line = line[:-1]
-                continue
+    curr_file = parent / filename
+    for line in curr_file.read_text().splitlines():
+        line = line.rstrip()
+        if concat_line is not None:
+            line = f'{concat_line}{line.lstrip()}'
+            concat_line = None
+        if line.endswith('\\'):
+            concat_line = line[:-1]
+            continue
 
-            command_match = command_re.match(line)
-            if command_match:
-                indent, contents = command_match.groups()
-                # replace { and } with other sequences, so they don't interfere with f string
-                contents = contents.replace('{', '{{').replace('}', '}}')
-                # replace interpolation with value \1\2 is a hack lmao
-                # It's basically grabbing from either the first or second group, since they're mutually exclusive
-                contents = interpolation_re.sub(r'{\1\2}', contents)
-                extra_line = None
-                if contents.endswith(':'):
-                    func_def_start = right_most_function(contents)
-                    # print('func: ', line)
-                    if func_def_start is None:
-                        raise ValueError(f'Command {contents!r} ends with colon but does not contain function')
-                    func_def = contents[func_def_start:-1].strip()
-                    code.append(f'{indent}__f, __extra = __function_name__(f"{func_def}")')
-                    contents = f'{contents[:func_def_start]} {{__f}}{{__extra}}'
-                    extra_line = f'{indent}with __function__(__f):'
-                code.append(f'{indent}__line__(rf""" {contents} """[1:-1])')
-                if extra_line:
-                    code.append(extra_line)
+        command_match = command_re.match(line)
+        if command_match:
+            indent, contents = command_match.groups()
+            # replace { and } with other sequences, so they don't interfere with f string
+            contents = contents.replace('{', '{{').replace('}', '}}')
+            # replace interpolation with value \1\2 is a hack lmao
+            # It's basically grabbing from either the first or second group, since they're mutually exclusive
+            contents = interpolation_re.sub(r'{\1\2}', contents)
+            extra_line = None
+            if contents.endswith(':'):
+                func_def_start = right_most_function(contents)
+                # print('func: ', line)
+                if func_def_start is None:
+                    raise ValueError(f'Command {contents!r} ends with colon but does not contain function')
+                func_def = contents[func_def_start:-1].strip()
+                code.append(f'{indent}__f, __extra = __function_name__(f"{func_def}")')
+                contents = f'{contents[:func_def_start]} {{__f}}{{__extra}}'
+                extra_line = f'{indent}with __function__(__f):'
+            code.append(f'{indent}__line__(rf""" {contents} """[1:-1])')
+            if extra_line:
+                code.append(extra_line)
+        else:
+            create_match = create_statement_re.fullmatch(line)
+            if create_match:
+                indent, file_type, name, data = create_match.groups()
+                name = ns(name, default=namespace)
+                code.append(f'{indent}__other__("{file_type}")["{name}"] ={data}')
             else:
-                create_match = create_statement_re.fullmatch(line)
-                if create_match:
-                    indent, file_type, name, data = create_match.groups()
-                    name = ns(name, default=namespace)
-                    code.append(f'{indent}__other__("{file_type}")["{name}"] ={data}')
-                else:
-                    code.append(line)
+                code.append(line)
     print(curr_file)
     pyth = '\n'.join(code)
 
@@ -112,7 +125,7 @@ def comp_file(parent: str, filename: str, globals: dict[str, object], namespace=
     if verbose:
         print_code()
     old_path = sys.path[:]
-    sys.path.insert(0, parent)
+    sys.path.insert(0, parent.name)
     try:
         exec(pyth, globals)
     except Exception as e:
@@ -190,7 +203,7 @@ def build_globals(func_stack: list, capturer_stack: list, func_files: dict,
 
 
 def get_header() -> str:
-    return f'# Generated by PackScript {__version__}{modified_by and f" modified by: {modified_by}"}\n'
+    return f'# Generated by PackScript {__version__} by {__author__}{modified_by and f" modified by: {modified_by}"}\n'
 
 
 def get_folder(path: str, pf: int) -> str:
@@ -198,131 +211,111 @@ def get_folder(path: str, pf: int) -> str:
 
 
 def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
-    try:
-        namespaces = os.listdir(os.path.join(input, 'data'))
+    input: Path = Path(input or '.').absolute()
+    has_datapack = (input / 'data').is_dir()
 
-        is_zip = output.endswith('.zip')
-        output_folder = output.removesuffix('.zip')
-        if namespaces:
-            if not input:
-                input = '.'
-            data = os.path.join(input, 'data')
-            if os.path.exists(data) and os.path.exists(os.path.join(input, 'pack.mcmeta')):
-                try:
-                    shutil.rmtree(os.path.join(output_folder, 'data'))
-                except IOError:
-                    pass
-                shutil.copytree(data, os.path.join(output_folder, 'data'))
-                shutil.copy(os.path.join(input, 'pack.mcmeta'),
-                            os.path.join(output_folder, 'pack.mcmeta'))
-                if os.path.exists(os.path.join(input, 'pack.png')):
-                    shutil.copy(os.path.join(input, 'pack.png'),
-                                os.path.join(output_folder, 'pack.png'))
+    is_zip = output.endswith('.zip')
+    output_folder = Path(output.removesuffix('.zip')).absolute()
+    if has_datapack:
+        data = input / 'data'
+        if not data.exists() or not (input / 'pack.mcmeta').exists():
+            raise FileNotFoundError('Need data folder and pack.mcmeta')
+        output_folder.mkdir(parents=True, exist_ok=True)
+        for file in output_folder.iterdir():
+            if file.is_file() or file.is_symlink():
+                file.unlink()
             else:
-                raise FileNotFoundError('need data folder and pack.mcmeta')
-        # Thanks, boq.
+                shutil.rmtree(file)
+
+        if (input / 'overlays').is_dir():
+            shutil.copytree(input / 'overlays', output_folder, dirs_exist_ok=True)
+        shutil.copytree(data, output_folder / 'data')
+        shutil.copy((input / 'pack.mcmeta'),
+                    (output_folder / 'pack.mcmeta'))
+        if (input / 'pack.png').exists():
+            shutil.copy((input / 'pack.png'),
+                        (output_folder / 'pack.png'))
         pack_meta = read_pack_meta(input)
         pack_format = pack_meta.get('pack').get('pack_format')
         if not isinstance(pack_format, int):
             raise ValueError('Invalid pack.mcmeta file')
 
-        function_tags: dict[str, list[str]] = {}
-        other: dict[str, dict[str, object]] = {}
-        for namespace in sorted(namespaces):
-            try:
-                if not source:
-                    shutil.rmtree(os.path.join(output_folder, 'data', namespace, get_folder('source', pack_format)))
-            except IOError:
+    function_tags: dict[str, list[str]] = {}
+    other: dict[str, dict[str, object]] = {}
+    for namespace in sorted((has_datapack or []) and (output_folder / 'data').iterdir()):
+        func_files: dict[str, list[str]] = {'': []}
+        func_stack: list[str] = ['']
+        capturer_stack: list[str] = []
+
+        globals = build_globals(func_stack, capturer_stack, func_files, other, namespace.name, function_tags)
+        working_folder = (namespace / get_folder("source", pack_format))
+        if (not get_folder('source', pack_format).endswith('s') and
+                (namespace / 'sources').exists()):
+            raise ValueError('Legacy "sources" folder detected! Rename your folders to be singular!')
+        try:
+            for filename in working_folder.iterdir():
+                if filename.suffix == f'.{DATA_EXT}':
+                    comp_file(working_folder, filename.name, globals,
+                              namespace.name, verbose=verbose)
+        except IOError:
+            continue
+
+        if not source:
+            shutil.rmtree(namespace / get_folder('source', pack_format), ignore_errors=True)
+        func_files.pop('')
+        # Iterate through generated functions
+        for name, content in func_files.items():
+            func_dir = get_folder('function', pack_format)
+            mcfunction_path = output_folder / 'data' / f'{name.replace(":", f"/{func_dir}/")}.mcfunction'
+            if not content:
                 continue
-            func_files: dict[str, list[str]] = {'': []}
-            func_stack: list[str] = ['']
-            capturer_stack: list[str] = []
+            mcfunction_path.parent.mkdir(parents=True, exist_ok=True)
+            mcfunction_path.write_text(get_header() + '\n'.join(content) + '\n')
 
-            globals = build_globals(func_stack, capturer_stack, func_files, other, namespace, function_tags)
-            working_folder = os.path.join(input, f'data/{namespace}/{get_folder("source", pack_format)}')
-            if (not get_folder('source', pack_format).endswith('s') and
-                    os.path.exists(os.path.join(working_folder, f'data/{namespace}/sources'))):
-                raise ValueError('Legacy "sources" folder detected! Rename your folders to be singular!')
+        # <editor-fold defaultstate="collapsed" desc="Move function tags into 'other' dictionary">
+
+        other.setdefault(f'tags/{get_folder("function", pack_format)}', {}).update(
+            {tag: {'values': func_names} for tag, func_names in function_tags.items()})
+
+        # </editor-fold>
+
+        # Write stuff in other
+        for file_type, stuff in other.items():
+            for name, content in stuff.items():
+                name = name.replace(':', f'/{file_type}/')
+                if '.' not in name:
+                    name += '.json'
+                mcfunction_path = output_folder / 'data' / name
+                mcfunction_path.parent.mkdir(parents=True, exist_ok=True)
+                if isinstance(content, (dict, list)):
+                    content = json.dumps(content, indent=2, ensure_ascii=False)
+                if not isinstance(content, (str, bytes)):
+                    raise ValueError(f'Error: invalid content: {content!r}')
+                mcfunction_path.write_text(content)
+
+        if is_zip:
+            cwd = Path.cwd()
             try:
-                for filename in os.listdir(working_folder):
-                    if filename.endswith(f'.{DATA_EXT}'):
-                        comp_file(working_folder, filename, globals,
-                                  namespace, verbose=verbose)
-            except IOError:
-                continue
-            func_files.pop('')
-            # Iterate through generated functions
-            for name, content in func_files.items():
-                func_dir = get_folder('function', pack_format)
-                mcfunction_path = os.path.join(output_folder, f'data/{name.replace(":", f"/{func_dir}/")}.mcfunction')
-                if not content:
-                    continue
-                try:
-                    os.makedirs(os.path.dirname(mcfunction_path))
-                except FileExistsError:
-                    pass
-                with open(mcfunction_path, 'w') as w:
-                    w.write(get_header() + '\n'.join(content) + '\n')
-
-            # <editor-fold defaultstate="collapsed" desc="Move function tags into 'other' dictionary">
-
-            other.setdefault(f'tags/{get_folder("function", pack_format)}', {}).update(
-                {tag: {'values': func_names} for tag, func_names in function_tags.items()})
-
-            # </editor-fold>
-
-            # Write stuff in other
-            for file_type, stuff in other.items():
-                for name, content in stuff.items():
-                    name = name.replace(':', f'/{file_type}/')
-                    if '.' not in name:
-                        name += '.json'
-                    mcfunction_path = os.path.join(output_folder, f'data/{name}')
-                    try:
-                        os.makedirs(os.path.abspath(os.path.join(mcfunction_path, '..')))
-                    except FileExistsError:
-                        pass
-                    with open(mcfunction_path, 'w') as w:
-                        if isinstance(content, (dict, list)):
-                            json.dump(content, w, indent=2)
-                        elif isinstance(content, (str, bytes)):
-                            w.write(content)
-                        else:
-                            raise ValueError(f'Error: invalid content: {content}')
-            if is_zip:
-                import zipfile
-
-                def zipdir(data_path, ziph):
-                    # ziph is zipfile handle
-                    for root, dirs, files in os.walk(data_path):
-                        for file in files:
-                            base = str(os.path.join(root, file))
-                            rel = os.path.dirname(data_path)
-                            ziph.write(os.path.join(root, file), os.path.relpath(base, rel))
-
-                zipf = zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED)
-                zipdir(os.path.join(output_folder, 'data'), zipf)
-                zipf.write(os.path.join(output_folder, 'pack.mcmeta'), 'pack.mcmeta')
-                zipf.close()
+                chdir(output_folder.parent)
+                shutil.make_archive(output_folder.stem, 'zip', output_folder.name)
+            finally:
+                chdir(cwd)
                 shutil.rmtree(output_folder)
-    except FileNotFoundError:
-        pass
     func_files = {}
-    for f in os.listdir(input):
-        if f.endswith(f'.{FUNC_EXT}'):
-            func_stack = [f]
-            func_files[f] = []
+    for f in input.iterdir():
+        if f.name.endswith(f'.{FUNC_EXT}'):
+            func_stack = [f.name]
+            func_files[f.name] = []
 
             globals = build_globals(func_stack, [], func_files, {})
 
-            comp_file(input, f, globals, verbose=verbose)
+            comp_file(input, f.name, globals, verbose=verbose)
     if func_files:
-        os.makedirs(output)
+        output_folder.mkdir(parents=True, exist_ok=True)
     for f, content in func_files.items():
         f = f[f.find(':') + 1:].replace('/', '_').removesuffix(f'.{FUNC_EXT}')
-        mcfunction_path = os.path.join(output, f'{f}.mcfunction')
-        with open(mcfunction_path, 'w') as w:
-            w.write(get_header() + '\n'.join(content) + '\n')
+        mcfunction_path = output_folder / f'{f}.mcfunction'
+        mcfunction_path.write_text(get_header() + '\n'.join(content) + '\n')
 
 
 def init_template(*, name: str, description: str, pack_format: int, output: str, namespace: str, **_):
@@ -338,38 +331,34 @@ def init_template(*, name: str, description: str, pack_format: int, output: str,
     while not pack_format:
         v = input(f'Pack Format/Minecraft Version ({latest_mc_version}): ') or latest_mc_version
         try:
-            pack_format = pack_formats.get(v) or int(v)
+            pack_format = version_or_pf(v)
         except ValueError:
             print(f"You must provide a recognized mc version or a pack format, {v!r} is neither.")
     v = v and f' for version {v}'
     description = description or input(f'Description (Datapack {name!r}{v}): ') or \
-        f'Datapack {name!r}{v}'
-    output = output or input(f'Output Directory ({name.replace(" ", "_")}): ') or name.replace(' ', '_')
-    source = os.path.join(output, f'data/{namespace}/{get_folder("source", pf=pack_format)}')
-    try:
-        os.makedirs(source)
-    except FileExistsError:
-        pass
-    with open(os.path.join(os.path.join(source, f'main.{DATA_EXT}')), 'w') as w:
-        import inspect
-        w.write(inspect.cleandoc(f'''
-            /function tick [tick]:
-                /seed
-            /function load [load]:
-                /tellraw @a "Loaded {name}"
-        '''))
-
-    with open(os.path.join(output, 'pack.mcmeta'), 'w') as w:
-        json.dump({
-            'pack': {
-                'pack_format': pack_format,
-                'supported_formats': [pack_format, pack_format],
-                'description': description
-            }
-        }, w, indent=4)
+                  f'Datapack {name!r}{v}'
+    output: str = output or input(f'Output Directory ({name.replace(" ", "_")}): ') or name.replace(' ', '_')
+    output: Path = Path(output).absolute()
+    source = (output / 'data' / namespace / get_folder("source", pf=pack_format))
+    source.mkdir(parents=True, exist_ok=True)
+    import textwrap
+    (source / f'main.{DATA_EXT}').write_text(textwrap.dedent(f'''
+        /function tick [tick]:
+            /seed
+        /function load [load]:
+            /tellraw @a "Loaded {name}"
+    '''))
+    (output / 'pack.mcmeta').write_text(json.dumps({
+        'pack': {
+            'pack_format': pack_format,
+            'supported_formats': {'min_inclusive': pack_format, 'max_inclusive': pack_format},
+            'description': description
+        }
+    }, indent=4))
 
 
-def update_pack_format(input, target, min, max, **_):
+def update_pack_format(input: str, target: str, min: str, max: str, **_):
+    input: Path = Path(input).absolute()
     pack_meta = read_pack_meta(input)
     target_pack_format = pack_meta.get('pack').get('pack_format')
     if not isinstance(target_pack_format, int):
@@ -383,31 +372,30 @@ def update_pack_format(input, target, min, max, **_):
         min_pack_format, max_pack_format = None, None
     if target or min or max:
         from builtins import min as min_f, max as max_f
-        target = pack_formats.get(target) or (target and int(target)) or target_pack_format
-        min = min_f(pack_formats.get(min) or (min and int(min)) or min_pack_format or target, target)
-        max = max_f(pack_formats.get(max) or (max and int(max)) or max_pack_format or target, target)
-        pack_meta.get('pack')['supported_formats'] = [min, max]
+        target = version_or_pf(target, target_pack_format)
+        min = min_f(version_or_pf(min, min_pack_format) or target, target)
+        max = max_f(version_or_pf(max, max_pack_format) or target, target)
+        pack_meta.get('pack')['supported_formats'] = {'min_inclusive': min, 'max_inclusive': max}
         pack_meta.get('pack')['pack_format'] = target
-        with open(os.path.join(input, 'pack.mcmeta'), 'w') as w:
-            json.dump(pack_meta, w, indent=4)
+        (input / 'pack.mcmeta').write_text(json.dumps(pack_meta, indent=4))
     else:
         target, min, max = target_pack_format, min_pack_format, max_pack_format
-
+    def versions_of(pf):
+        return [key for key, value in pack_formats.items() if value == pf]
     if max:
-        print(c(f"{'max pack_format:':<20}{max:3} {[key for key, value in pack_formats.items() if value == max]}"))
-    print(c(f"{'target pack_format:':<20}{target:3} {[key for key, value in pack_formats.items() if value == target]}"))
+        print(c(f"{'max pack_format:':<20}{max:3} {versions_of(max)}"))
+    print(c(f"{'target pack_format:':<20}{target:3} {versions_of(target)}"))
     if min:
-        print(c(f"{'min pack_format:':<20}{min:3} {[key for key, value in pack_formats.items() if value == min]}"))
+        print(c(f"{'min pack_format:':<20}{min:3} {versions_of(min)}"))
 
 
-def read_pack_meta(input) -> dict:
-    if not os.path.isfile(os.path.join(input, 'pack.mcmeta')):
-        raise ValueError('No pack.mcmeta found')
+def read_pack_meta(input: Path) -> dict:
+    if not (input / 'pack.mcmeta').is_file():
+        raise FileNotFoundError('No pack.mcmeta found')
 
-    with open(os.path.join(input, 'pack.mcmeta')) as f:
-        pack_meta = json.load(f)
-        if not pack_meta or not isinstance(pack_meta.get('pack'), dict):
-            raise ValueError('Invalid pack.mcmeta file')
+    pack_meta = json.loads((input / 'pack.mcmeta').read_text())
+    if not pack_meta or not isinstance(pack_meta.get('pack'), dict):
+        raise ValueError('Invalid pack.mcmeta file')
     return pack_meta
 
 
@@ -451,9 +439,8 @@ def replace_script_with_latest():
     if response.status == 200:
         data = response.read()
         if b'\n__version__ = ' in data:
-            with open(sys.argv[0], 'w') as w:
-                w.write(data.decode('utf-8'))
-                print("Done!")
+            Path(sys.argv[0]).write_bytes(data)
+            print("Done!")
             return
         print(data, file=sys.stderr)
         raise ValueError("Bad data returned")
@@ -535,7 +522,7 @@ def main():
 
     args_dict = {key.replace('-', '_'): val for key, val in vars(args).items()}
     if args.version:
-        print(f'PackScript {__version__}')
+        print(f'PackScript {__version__} (Python {sys.version})')
     elif args.command is None:
         parser.print_help()
     elif args.command.startswith('c'):
