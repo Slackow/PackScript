@@ -1,0 +1,5 @@
+
+/function tick []:
+    /seed
+/function load []:
+    /tellraw @a "Loaded input_pack"

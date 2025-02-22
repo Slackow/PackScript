@@ -1,0 +1,4 @@
+/function tick []:
+    /seed
+/function load []:
+    /tellraw @a "Loaded overlay"
