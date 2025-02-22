@@ -3,15 +3,17 @@
 # /// script
 # requires-python = ">=3.12"
 # ///
-__author__ = 'Slackow'
+__author__  = 'Slackow'
 __version__ = '0.1.5'
-
-latest_mc_version = '1.21.4'
+__v_type__  = 'dev'
 
 # # # # # # # # # # # # # # # # # # # # # #
 # Please set this to your username if you are modifying this script
 modified_by = ''
 # # # # # # # # # # # # # # # # # # # # # #
+
+latest_mc_version = '1.21.4'
+
 import argparse, json, re, sys, shutil
 from os import chdir
 from pathlib import Path
@@ -42,6 +44,9 @@ pack_formats = {
 DATA_EXT = 'dps'
 FUNC_EXT = 'fps'
 
+if __v_type__ not in ('release', 'dev'):
+    raise ValueError(f'Version type {__v_type__!r} is invalid')
+
 
 def ns(resource: str, /, *, default: str = 'minecraft'):
     return resource if ':' in resource else f'{default}:{resource}'
@@ -69,13 +74,14 @@ def version_or_pf(s: str, default=...):
     return res
 
 
-def comp_file(parent: Path, filename: str, globals: dict[str, object], namespace='minecraft', verbose=False):
+def comp_file(parent: Path, filename: Path, globals: dict[str, object], namespace: str, verbose=False):
     command_re = re.compile(r'([\t ]*)/(.*)')
     interpolation_re = re.compile(r'\$\{\{(.*?)}}|(?<!^)\$([a-zA-Z_]\w*)')
     create_statement_re = re.compile(r'([\t ]*)create\b[ \t]*([\w/]+)\b[ \t]*([a-z\d:/_.-]*)[ \t]*->(.*)')
     code = []
     concat_line = None
     curr_file = parent / filename
+    print(filename)
     for line in curr_file.read_text().splitlines():
         line = line.rstrip()
         if concat_line is not None:
@@ -114,7 +120,6 @@ def comp_file(parent: Path, filename: str, globals: dict[str, object], namespace
                 code.append(f'{indent}__other__("{file_type}")["{name}"] ={data}')
             else:
                 code.append(line)
-    print(curr_file)
     pyth = '\n'.join(code)
 
     def print_code(file=sys.stdout):
@@ -125,11 +130,11 @@ def comp_file(parent: Path, filename: str, globals: dict[str, object], namespace
     if verbose:
         print_code()
     old_path = sys.path[:]
-    sys.path.insert(0, parent.name)
+    sys.path.insert(0, str(curr_file.parent))
     try:
         exec(pyth, globals)
     except Exception as e:
-        print('Error in:', curr_file, file=sys.stderr)
+        print('Error in:', filename, file=sys.stderr)
         print_code(sys.stderr)
         raise e
     finally:
@@ -210,39 +215,11 @@ def get_folder(path: str, pf: int) -> str:
     return path if pf >= 45 else path + 's'
 
 
-def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
-    input: Path = Path(input or '.').absolute()
-    has_datapack = (input / 'data').is_dir()
-
-    is_zip = output.endswith('.zip')
-    output_folder = Path(output.removesuffix('.zip')).absolute()
-    if has_datapack:
-        data = input / 'data'
-        if not data.exists() or not (input / 'pack.mcmeta').exists():
-            raise FileNotFoundError('Need data folder and pack.mcmeta')
-        output_folder.mkdir(parents=True, exist_ok=True)
-        for file in output_folder.iterdir():
-            if file.is_file() or file.is_symlink():
-                file.unlink()
-            else:
-                shutil.rmtree(file)
-
-        if (input / 'overlays').is_dir():
-            shutil.copytree(input / 'overlays', output_folder, dirs_exist_ok=True)
-        shutil.copytree(data, output_folder / 'data')
-        shutil.copy((input / 'pack.mcmeta'),
-                    (output_folder / 'pack.mcmeta'))
-        if (input / 'pack.png').exists():
-            shutil.copy((input / 'pack.png'),
-                        (output_folder / 'pack.png'))
-        pack_meta = read_pack_meta(input)
-        pack_format = pack_meta.get('pack').get('pack_format')
-        if not isinstance(pack_format, int):
-            raise ValueError('Invalid pack.mcmeta file')
-
+def comp_pack(output_folder, pack_format, source, verbose):
     function_tags: dict[str, list[str]] = {}
     other: dict[str, dict[str, object]] = {}
-    for namespace in sorted((has_datapack or []) and (output_folder / 'data').iterdir()):
+    for namespace in sorted((output_folder / 'data').iterdir()):
+        namespace: Path
         func_files: dict[str, list[str]] = {'': []}
         func_stack: list[str] = ['']
         capturer_stack: list[str] = []
@@ -252,13 +229,10 @@ def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
         if (not get_folder('source', pack_format).endswith('s') and
                 (namespace / 'sources').exists()):
             raise ValueError('Legacy "sources" folder detected! Rename your folders to be singular!')
-        try:
-            for filename in working_folder.iterdir():
-                if filename.suffix == f'.{DATA_EXT}':
-                    comp_file(working_folder, filename.name, globals,
-                              namespace.name, verbose=verbose)
-        except IOError:
-            continue
+
+        for filename in working_folder.rglob(f'*.{DATA_EXT}'):
+            comp_file(working_folder, filename, globals,
+                      namespace.name, verbose=verbose)
 
         if not source:
             shutil.rmtree(namespace / get_folder('source', pack_format), ignore_errors=True)
@@ -272,12 +246,8 @@ def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
             mcfunction_path.parent.mkdir(parents=True, exist_ok=True)
             mcfunction_path.write_text(get_header() + '\n'.join(content) + '\n')
 
-        # <editor-fold defaultstate="collapsed" desc="Move function tags into 'other' dictionary">
-
         other.setdefault(f'tags/{get_folder("function", pack_format)}', {}).update(
             {tag: {'values': func_names} for tag, func_names in function_tags.items()})
-
-        # </editor-fold>
 
         # Write stuff in other
         for file_type, stuff in other.items():
@@ -285,40 +255,95 @@ def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
                 name = name.replace(':', f'/{file_type}/')
                 if '.' not in name:
                     name += '.json'
-                mcfunction_path = output_folder / 'data' / name
-                mcfunction_path.parent.mkdir(parents=True, exist_ok=True)
+                other_path = output_folder / 'data' / name
+                other_path.parent.mkdir(parents=True, exist_ok=True)
                 if isinstance(content, (dict, list)):
                     content = json.dumps(content, indent=2, ensure_ascii=False)
                 if not isinstance(content, (str, bytes)):
                     raise ValueError(f'Error: invalid content: {content!r}')
-                mcfunction_path.write_text(content)
+                other_path.write_text(content)
 
-        if is_zip:
-            cwd = Path.cwd()
-            try:
-                chdir(output_folder.parent)
-                shutil.make_archive(output_folder.stem, 'zip', output_folder.name)
-            finally:
-                chdir(cwd)
-                shutil.rmtree(output_folder)
+
+def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
+    input: Path = Path(input or '.').absolute()
+    has_datapack = (input / 'data').is_dir()
+
+    is_zip = output.endswith('.zip')
+    output_folder = Path(output.removesuffix('.zip')).absolute()
+    if input == output_folder:
+        raise shutil.SameFileError('Input and output directories must not have the same')
+    pack_format = None
+    if has_datapack:
+        data = input / 'data'
+        if not data.exists() or not (input / 'pack.mcmeta').exists():
+            raise FileNotFoundError('Need data folder and pack.mcmeta')
+        output_folder.mkdir(parents=True, exist_ok=True)
+        for file in output_folder.iterdir():
+            if file.is_file() or file.is_symlink():
+                file.unlink()
+            else:
+                shutil.rmtree(file)
+        has_overlays = (input / 'overlays').is_dir()
+        if has_overlays:
+            shutil.copytree(input / 'overlays', output_folder, dirs_exist_ok=True)
+        shutil.copytree(data, output_folder / 'data')
+        if (input / 'pack.png').exists():
+            shutil.copy(input / 'pack.png', output_folder / 'pack.png')
+        pack_meta = read_pack_meta(input)
+        pack_format = pack_meta.get('pack').get('pack_format')
+        if not isinstance(pack_format, int):
+            raise ValueError('Invalid pack.mcmeta file')
+        if has_overlays:
+            registered_overlays = pack_meta.setdefault('overlays', {}).setdefault('entries', [])
+            overlay_re = re.compile(r'([\d.]+)-([\d.]+)')
+            for overlay in (input / 'overlays').iterdir():
+                if overlay.name in (reg['directory'] for reg in registered_overlays):
+                    continue
+                elif overlay_match := overlay_re.fullmatch(overlay.name.replace('_', '.')):
+                    min, max = map(version_or_pf, overlay_match.groups())
+                    formats = {'min_inclusive': min, 'max_inclusive': max}
+                elif pf := version_or_pf(overlay.name.replace('_', '.'), default=False):
+                    formats = pf
+                else:
+                    raise ValueError(f'Unregistered overlay {overlay.name!r}, add it to pack.mcmeta or name it after the version it is for')
+                registered_overlays.insert(0, {
+                    'formats': formats,
+                    'directory': overlay.name,
+                })
+            for overlay in registered_overlays:
+                path = output_folder / overlay['directory']
+                comp_pack(path, pack_format, source, verbose)
+        (output_folder / 'pack.mcmeta').write_text(json.dumps(pack_meta, indent=4))
+        comp_pack(output_folder, pack_format, source, verbose)
+
+    if has_datapack and is_zip:
+        cwd = Path.cwd()
+        try:
+            chdir(output_folder.parent)
+            shutil.make_archive(output_folder.stem, 'zip', output_folder.name)
+        finally:
+            chdir(cwd)
+            shutil.rmtree(output_folder)
+
     func_files = {}
-    for f in input.iterdir():
-        if f.name.endswith(f'.{FUNC_EXT}'):
-            func_stack = [f.name]
-            func_files[f.name] = []
+    for f in input.glob(f'*.{FUNC_EXT}'):
+        func_stack = [f.name]
+        func_files[f.name] = []
+        globals = build_globals(func_stack, [], func_files, {})
 
-            globals = build_globals(func_stack, [], func_files, {})
-
-            comp_file(input, f.name, globals, verbose=verbose)
+        comp_file(input, f, globals, namespace='minecraft', verbose=verbose)
     if func_files:
         output_folder.mkdir(parents=True, exist_ok=True)
     for f, content in func_files.items():
         f = f[f.find(':') + 1:].replace('/', '_').removesuffix(f'.{FUNC_EXT}')
         mcfunction_path = output_folder / f'{f}.mcfunction'
         mcfunction_path.write_text(get_header() + '\n'.join(content) + '\n')
+    if not func_files and not has_datapack:
+        print("No datapack/func_files found!")
 
 
 def init_template(*, name: str, description: str, pack_format: int, output: str, namespace: str, **_):
+    from textwrap import dedent
     if not all((name, description, pack_format, output, namespace)):
         print('Leave a field empty to have it default')
     name = name or input('Datapack Name (Datapack): ') or 'Datapack'
@@ -341,13 +366,12 @@ def init_template(*, name: str, description: str, pack_format: int, output: str,
     output: Path = Path(output).absolute()
     source = (output / 'data' / namespace / get_folder("source", pf=pack_format))
     source.mkdir(parents=True, exist_ok=True)
-    import textwrap
-    (source / f'main.{DATA_EXT}').write_text(textwrap.dedent(f'''
+    (source / f'main.{DATA_EXT}').write_text(dedent(f'''
         /function tick [tick]:
             /seed
         /function load [load]:
             /tellraw @a "Loaded {name}"
-    '''))
+    '''.lstrip('\n')))
     (output / 'pack.mcmeta').write_text(json.dumps({
         'pack': {
             'pack_format': pack_format,
@@ -357,19 +381,16 @@ def init_template(*, name: str, description: str, pack_format: int, output: str,
     }, indent=4))
 
 
-def update_pack_format(input: str, target: str, min: str, max: str, **_):
+def update_pack_format(*, input: str, target: str, min: str, max: str, **_):
     input: Path = Path(input).absolute()
     pack_meta = read_pack_meta(input)
     target_pack_format = pack_meta.get('pack').get('pack_format')
     if not isinstance(target_pack_format, int):
         raise ValueError('Invalid pack.mcmeta file')
-    bounds = pack_meta.get('pack').get('supported_formats')
-    if isinstance(bounds, list):
-        min_pack_format, max_pack_format = bounds
-    elif isinstance(bounds, dict):
-        min_pack_format, max_pack_format = bounds.get('min_inclusive'), bounds.get('max_inclusive')
-    else:
-        min_pack_format, max_pack_format = None, None
+    match pack_meta.get('pack').get('supported_formats'):
+        case [min_pack_format, max_pack_format]: pass
+        case {'min_inclusive': min_pack_format, 'max_inclusive': max_pack_format}: pass
+        case _: min_pack_format, max_pack_format = None, None
     if target or min or max:
         from builtins import min as min_f, max as max_f
         target = version_or_pf(target, target_pack_format)
@@ -380,8 +401,14 @@ def update_pack_format(input: str, target: str, min: str, max: str, **_):
         (input / 'pack.mcmeta').write_text(json.dumps(pack_meta, indent=4))
     else:
         target, min, max = target_pack_format, min_pack_format, max_pack_format
+
     def versions_of(pf):
-        return [key for key, value in pack_formats.items() if value == pf]
+        return f"({', '.join(key for key, value in pack_formats.items() if value == pf)})"
+
+    def c(s: str) -> str:
+        """ color numbers in a string with ansi codes """
+        return re.sub(r'(\d+)', '\033[33m\\1\033[0m', s)
+
     if max:
         print(c(f"{'max pack_format:':<20}{max:3} {versions_of(max)}"))
     print(c(f"{'target pack_format:':<20}{target:3} {versions_of(target)}"))
@@ -399,10 +426,7 @@ def read_pack_meta(input: Path) -> dict:
     return pack_meta
 
 
-def c(s: str) -> str:
-    """ color numbers in a string with ansi codes """
-    return re.sub(r'(\d+)', '\033[33m\\1\033[0m', s)
-
+# <editor-fold defaultstate="collapsed" desc="def update(): ...">
 def get_data_from_url(url: str, default_context=True, max_redirects=10):
     import ssl
     from http.client import HTTPSConnection
@@ -458,6 +482,7 @@ def update():
         print("You have a future version, not updating.")
         return
     replace_script_with_latest()
+# </editor-fold>
 
 
 def main():
@@ -522,7 +547,7 @@ def main():
 
     args_dict = {key.replace('-', '_'): val for key, val in vars(args).items()}
     if args.version:
-        print(f'PackScript {__version__} (Python {sys.version})')
+        print(f'PackScript {__version__}-{__v_type__} (Python {sys.version})')
     elif args.command is None:
         parser.print_help()
     elif args.command.startswith('c'):
