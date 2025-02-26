@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - packscript.py
+      - .github/workflows/publish.yml
+      - pyproject.toml
 jobs:
   build-and-publish:
     name: Build and publish to PyPI
