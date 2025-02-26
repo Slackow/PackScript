@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "packscript"
+dynamic = ["version", "authors", "license"]
+requires-python = ">=3.12"
+readme = {file = "README.md", content-type = "text/markdown"}
+keywords = ["packscript", "mcfunction", "datapack", "pack.mcmeta", "nbt", "templating", "language"]
+
+[project.scripts]
+packscript = "packscript:main"
+
+[tool.setuptools]
+py-modules = ["packscript"]
+
+[tool.setuptools.dynamic]
+version = {attr = "packscript.__version__"}
+license = {attr = "packscript.__license__"}
+authors = [{name = {attr = "packscript.__author__"}}]
