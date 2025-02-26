@@ -21,7 +21,7 @@ and generate any other kind of file (especially JSON) easily.
 There is an associated syntax highlighter for VSCode with this project.
 Get it [here](https://marketplace.visualstudio.com/items?itemName=Slackow.ps-support).
 
-![packscript_ex](photos/packscript_ex.png)
+![packscript_ex](.github/photos/packscript_ex.png)
 
 # Constructs
 
@@ -229,9 +229,9 @@ function example_pack:say_something
 
 # Example Usage + PackScript Reloader
 
-![packscript_ex1](photos/packscript_ex2.png)
+![packscript_ex1](.github/photos/packscript_ex2.png)
 
-![minecraft_output](photos/in_game_img.png)
+![minecraft_output](.github/photos/in_game_img.png)
 
 This was used with the associated [packscript_reloader](https://github.com/Slackow/packscript_reloader) fabric mod.
 This mod works on snapshots, and will automatically compile packs under the `dev` directory in the world into the 
@@ -244,7 +244,7 @@ replaces to turn your invalid Python code
 into valid Python code, and then executing it.
 You can see this when you compile in verbose mode:
 
-![packscript_ex2](photos/packscript_ex2.png)
+![packscript_ex2](.github/photos/packscript_ex2.png)
 
 turns into
 
@@ -291,14 +291,15 @@ as the main generated function.
 
 # The CLI
 This tool has two main actions it can perform: compiling packs and initializing templates.
-- `python3 packscript.py c` (you can also use compile or comp)
-- `python3 packscript.py init`
+- `packscript c` (you can also use compile or comp)
+- `packscript init`
 
 More actions:
-- `python3 packscript.py --help` list general help
-- `python3 packscript.py --version` print the version of packscript
-- `python3 packscript.py c --help` print the help for compiling
-- `python3 packscript.py init --help` print the help for initializing a datapack
+- `packscript --help` list general help
+- `packscript --version` print the version of packscript
+- `packscript c --help` print the help for compiling
+- `packscript init --help` print the help for initializing a datapack
+- `packscript pf` edit and view the pack_format(s) supported by your datapack, you can use recognized version numbers directly
 ## Compile Options
 - `-i/--input <dir>` specify the directory of the pack you are compiling defaults to current dir.
 - `-o/--output <dir/zip>` specify the output of the pack (can output zip too) defaults to `output`
@@ -311,11 +312,11 @@ using this action.
 
 You can also specify options using flags
 
-ex: `python3 packscript.py init --output "Datapack" --name "Datapack" --namespace "main" --description "Datapack for version 1.20.4" --pack-format 26`
+ex: `packscript init --output "Datapack" --name "Datapack" --namespace "main" --description "Datapack for version 1.20.4" --pack-format 26`
 
 it's preferable to do just call the following instead:
 
-`python3 packscript.py init`
+`packscript init`
 
 ## Compile Action
 When a PackScript file is being compiled it will first print its location to the console, this is so if an error is encountered
@@ -346,12 +347,10 @@ In this case it's because there's a letter before the command line, making it ge
 # Get Started
 1. **Install Python.** Get [Python3](https://www.python.org/downloads/) and
    make sure it's in your path. (You can check by running `python3 -V` in your terminal)
-2. **Download PackScript.** You can find `packscript.py`
-   [here](https://github.com/Slackow/PackScript/releases/latest)
-3. **Setup Environment.** Place the `packscript.py` file into your working directory
-4. **Create A Datapack.** Run `python3 packscript.py init` in order to create a datapack with
+2. **Download/Install PackScript.** run `pip3 install packscript`, or directly use the `packscript.py` file in releases, and use `python3 packscript.py` instead of `packscript`
+3. **Create a Datapack.** Run `packscript init` in order to create a datapack with
    PackScript. You'll be prompted for information about the datapack.
    You should have a new datapack, you can put files in there as usual for them to
    be outputted, files in `<pack>/data/*/source/*.dps` and `<pack>/*.fps` will be interpreted as PackScript
    on compilation. By default, you will find a main.dps file there.
-5. **Compile Datapack.** To compile, run `python3 packscript.py compile -i <datapack directory> -o <output>`
+4. **Compile Datapack.** To compile, run `packscript compile -i <datapack directory> -o <output>`

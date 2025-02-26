@@ -3,8 +3,8 @@
 # /// script
 # requires-python = ">=3.12"
 # ///
-__version__ = '0.1.6'
-__v_type__  = 'dev'
+__version__ = '0.2.0'
+__v_type__  = 'release'
 __author__  = 'Slackow'
 __license__ = 'MIT'
 
@@ -25,6 +25,7 @@ def ver(base_version, start, end, *, pf):
 
 
 pack_formats = {
+    'future': 9001,
     '1.21.4': 61,
     '1.21.3': 57, '1.21.2': 57,
     '1.21.1': 48, '1.21': 48,
@@ -147,7 +148,8 @@ def build_globals(func_stack: list, capturer_stack: list, func_files: dict,
             return Dp((*self._type, attr))
         def __setattr__(self, attr: str, value: dict | list | str | bytes):
             if attr == '_type':
-                return object.__setattr__(self, attr, value)
+                object.__setattr__(self, attr, value)
+                return
             other.setdefault('/'.join(self._type), {})[n(attr)] = value
         def __delattr__(self, item):
             other['/'.join(self._type)].pop(n(item))
@@ -230,7 +232,7 @@ def comp_file(parent: Path, filename: Path, globals: dict[str, object], verbose=
             create_match = create_statement_re.fullmatch(line)
             if create_match:
                 indent, file_type, name, data = create_match.groups()
-                name = ns(name, default=globals['ns'])
+                name = ns(name, default=str(globals['ns']))
                 code.append(f'{indent}__other__("{file_type}")["{name}"] ={data}')
             else:
                 code.append(line)
@@ -270,7 +272,7 @@ def comp_pack(output_folder, pack_format, source, verbose):
                 (namespace / 'sources').exists()):
             raise ValueError('Legacy "sources" folder detected! Rename your folders to be singular!')
 
-        for filename in working_folder.rglob(f'*.{DATA_EXT}'):
+        for filename in sorted(working_folder.rglob(f'*.{DATA_EXT}')):
             comp_file(working_folder, filename, globals, verbose=verbose)
 
         if not source:
@@ -367,7 +369,7 @@ def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
             shutil.rmtree(output_folder)
 
     func_files = {}
-    for f in input.glob(f'*.{FUNC_EXT}'):
+    for f in sorted(input.glob(f'*.{FUNC_EXT}')):
         func_stack = [f.name]
         func_files[f.name] = []
         globals = build_globals(func_stack, [], func_files, {})
@@ -442,6 +444,7 @@ def update_pack_format(*, input: str, target: str, min: str, max: str, **_):
         (input / 'pack.mcmeta').write_text(json.dumps(pack_meta, indent=4))
     else:
         target, min, max = target_pack_format, min_pack_format, max_pack_format
+        print('edit these values via the --min, --target, or --max options')
 
     def versions_of(pf):
         return f"({', '.join(key for key, value in pack_formats.items() if value == pf)})"
@@ -471,7 +474,7 @@ def get_data_from_url(url: str, default_context=True, max_redirects=10):
     headers = {'Accept': '*/*', 'User-Agent': 'packscript.py'}
     connection.request('GET', path, headers=headers)
     response = connection.getresponse()
-    if response.status in range(300, 400) and max_redirects > 0:
+    if 300 <= response.status < 400 and max_redirects > 0:
         return get_data_from_url(response.getheader('Location'), default_context, max_redirects - 1)
     return response
 
@@ -504,6 +507,10 @@ def replace_script_with_latest():
 
 
 def update():
+    if __package__ is not None or getattr(sys, 'frozen', False):
+        print('You are using pip or the script is otherwise frozen! Cannot update.')
+        print('To update the package via pip use "pip install --upgrade packscript"' + ("" if __package__ is not None else "!"))
+        return
     latest = get_latest_version()
     if latest == __version__:
         print(f"Up to date, PackScript {__version__}")
