@@ -21,7 +21,7 @@ and generate any other kind of file (especially JSON) easily.
 There is an associated syntax highlighter for VSCode with this project.
 Get it [here](https://marketplace.visualstudio.com/items?itemName=Slackow.ps-support).
 
-![packscript_ex](.github/photos/packscript_ex.png)
+![packscript_ex](https://github.com/Slackow/PackScript/raw/main/.github/photos/packscript_ex.png)
 
 # Constructs
 
@@ -229,9 +229,9 @@ function example_pack:say_something
 
 # Example Usage + PackScript Reloader
 
-![packscript_ex1](.github/photos/packscript_ex2.png)
+![packscript_ex1](https://github.com/Slackow/PackScript/raw/main/.github/photos/packscript_ex2.png)
 
-![minecraft_output](.github/photos/in_game_img.png)
+![minecraft_output](https://github.com/Slackow/PackScript/raw/main/.github/photos/in_game_img.png)
 
 This was used with the associated [packscript_reloader](https://github.com/Slackow/packscript_reloader) fabric mod.
 This mod works on snapshots, and will automatically compile packs under the `dev` directory in the world into the 
@@ -244,7 +244,7 @@ replaces to turn your invalid Python code
 into valid Python code, and then executing it.
 You can see this when you compile in verbose mode:
 
-![packscript_ex2](.github/photos/packscript_ex2.png)
+![packscript_ex2](https://github.com/Slackow/PackScript/raw/main/.github/photos/packscript_ex2.png)
 
 turns into
 
@@ -299,6 +299,7 @@ More actions:
 - `packscript --version` print the version of packscript
 - `packscript c --help` print the help for compiling
 - `packscript init --help` print the help for initializing a datapack
+- `packscript update` update the tool to the latest version (if installed via pip, use that instead)
 - `packscript pf` edit and view the pack_format(s) supported by your datapack, you can use recognized version numbers directly
 ## Compile Options
 - `-i/--input <dir>` specify the directory of the pack you are compiling defaults to current dir.
