@@ -3,8 +3,8 @@
 # /// script
 # requires-python = ">=3.12"
 # ///
-__version__ = '0.2.1'
-__v_type__  = 'release'
+__version__ = '0.2.2'
+__v_type__  = 'dev'
 __author__  = 'Slackow'
 __license__ = 'MIT'
 
