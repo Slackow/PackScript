@@ -7,7 +7,7 @@ import unittest
 
 def packscript(*args):
     args = [f"'{arg}'" for arg in args]
-    os.system(f'python3 ../packscript.py {" ".join(args)}')
+    os.system(f'uv run ../packscript.py {" ".join(args)}')
 
 
 def read_mcfunction(filepath):

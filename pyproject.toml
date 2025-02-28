@@ -5,17 +5,25 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "packscript"
 dynamic = ["version"]
+description = "A datapack compiler for Minecraft"
 authors = [{name = "Slackow"}]
 license = { file = "LICENSE.txt" }
 requires-python = ">=3.12"
 readme = {file = "README.md", content-type = "text/markdown"}
 keywords = ["packscript", "mcfunction", "datapack", "pack.mcmeta", "nbt", "templating", "language"]
 
+[project.urls]
+Repository = "https://github.com/Slackow/PackScript.git"
+Issues = "https://github.com/Slackow/PackScript/issues"
+Download = "https://github.com/Slackow/PackScript/releases"
+Changelog = "https://github.com/Slackow/PackScript/releases"
+
 [project.scripts]
 packscript = "packscript:main"
 
 [tool.setuptools]
 py-modules = ["packscript"]
+package.find.exclude = ["test", "test.*"]
 
 [tool.setuptools.dynamic]
 version = {attr = "packscript.__version__"}

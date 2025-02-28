@@ -3,7 +3,7 @@
 # /// script
 # requires-python = ">=3.12"
 # ///
-__version__ = '0.2.0'
+__version__ = '0.2.1'
 __v_type__  = 'release'
 __author__  = 'Slackow'
 __license__ = 'MIT'
@@ -15,7 +15,7 @@ modified_by = ''
 
 latest_mc_version = '1.21.4'
 
-import argparse, json, re, sys, shutil
+import textwrap, argparse, json, re, sys, shutil
 from os import chdir
 from pathlib import Path
 
@@ -66,14 +66,14 @@ def right_most_function(contents):
 
 def version_or_pf(s: str, default=...):
     res = pack_formats.get(s)
-    if not res:
-        try:
-            return int(s)
-        except ValueError as e:
-            if default is not ...:
-                return default
-            raise e
-    return res
+    if res:
+        return res
+    try:
+        return int(s)
+    except ValueError as e:
+        if default is not ...:
+            return default
+        raise e
 
 
 def build_globals(func_stack: list, capturer_stack: list, func_files: dict,
@@ -137,7 +137,7 @@ def build_globals(func_stack: list, capturer_stack: list, func_files: dict,
         return Capturer()
 
     def n(s: str) -> str:
-        return ns(s, default=namespace)
+        return ns(s.removesuffix('.json'), default=namespace)
 
     class Dp:
         def __init__(self, type: tuple[str, ...]=()):
@@ -183,8 +183,10 @@ def get_folder(path: str, pf: int) -> str:
 def read_pack_meta(input: Path) -> dict:
     if not (input / 'pack.mcmeta').is_file():
         raise FileNotFoundError('No pack.mcmeta found')
-
-    pack_meta = json.loads((input / 'pack.mcmeta').read_text())
+    try:
+        pack_meta = json.loads((input / 'pack.mcmeta').read_text())
+    except ValueError:
+        pack_meta = None
     if not pack_meta or not isinstance(pack_meta.get('pack'), dict):
         raise ValueError('Invalid pack.mcmeta file')
     return pack_meta
@@ -299,7 +301,7 @@ def comp_pack(output_folder, pack_format, source, verbose):
                 other_path = output_folder / 'data' / name
                 other_path.parent.mkdir(parents=True, exist_ok=True)
                 if isinstance(content, (dict, list)):
-                    content = json.dumps(content, indent=2, ensure_ascii=False)
+                    content = json.dumps(content, indent=2, ensure_ascii=False, sort_keys=True)
                 if not isinstance(content, (str, bytes)):
                     raise ValueError(f'Error: invalid content: {content!r}')
                 if isinstance(content, bytes):
@@ -312,26 +314,47 @@ def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
     input: Path = Path(input or '.').absolute()
     has_datapack = (input / 'data').is_dir()
 
+    is_jar = output.endswith('.jar')
     is_zip = output.endswith('.zip')
-    output_folder = Path(output.removesuffix('.zip')).absolute()
+    output_folder = Path(output.removesuffix('.zip').removesuffix('.jar')).absolute()
+    if not output_folder.stem:
+        raise ValueError('Please provide an output with a filename')
     if input == output_folder:
         raise shutil.SameFileError('Input and output directories must not have the same')
     if has_datapack:
         data = input / 'data'
         if not data.exists() or not (input / 'pack.mcmeta').exists():
             raise FileNotFoundError('Need data folder and pack.mcmeta')
+        if is_jar and not any((input / m).exists() for m in ('fabric.mod.json', 'mods.toml', 'neoforge.mods.toml')):
+            raise FileNotFoundError(f'Need "fabric.mod.json" and/or "mods.toml" and/or "neoforge.mods.toml" Use {sys.argv[0]} init --modded')
         output_folder.mkdir(parents=True, exist_ok=True)
         for file in output_folder.iterdir():
             if file.is_file() or file.is_symlink():
                 file.unlink()
             else:
                 shutil.rmtree(file)
-        has_overlays = (input / 'overlays').is_dir()
-        if has_overlays:
-            shutil.copytree(input / 'overlays', output_folder, dirs_exist_ok=True)
-        shutil.copytree(data, output_folder / 'data')
-        if (input / 'pack.png').exists():
-            shutil.copy(input / 'pack.png', output_folder / 'pack.png')
+        def config(loc: str, *, type='file', dst='', mkdirs=False, dirs_exist_ok=False) -> bool:
+            src = input / loc
+            dst = (output_folder / (dst or loc))
+            if not (src.is_file() if type == 'file' else src.is_dir()):
+                return False
+            if mkdirs:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+            if type == 'file':
+                shutil.copy(src, dst)
+            else:
+                shutil.copytree(src, dst, dirs_exist_ok=dirs_exist_ok)
+            return True
+
+        has_overlays = config('overlays', type='dir', dst='.', dirs_exist_ok=True)
+        config('data', type='dir')
+        config('pack.png')
+        if is_jar:
+            config('assets', type='dir')
+            config('fabric.mod.json')
+            config('mods.toml', dst='META-INF/mods.toml', mkdirs=True)
+            config('mods.toml', dst='META-INF/neoforge.mods.toml')
+            config('neoforge.mods.toml', dst='META-INF/neoforge.mods.toml', mkdirs=True)
         pack_meta = read_pack_meta(input)
         pack_format = pack_meta.get('pack').get('pack_format')
         if not isinstance(pack_format, int):
@@ -339,7 +362,7 @@ def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
         if has_overlays:
             registered_overlays = pack_meta.setdefault('overlays', {}).setdefault('entries', [])
             overlay_re = re.compile(r'([\d.]+)-([\d.]+)')
-            for overlay in (input / 'overlays').iterdir():
+            for overlay in sorted((input / 'overlays').iterdir()):
                 if overlay.name in (reg['directory'] for reg in registered_overlays):
                     continue
                 elif overlay_match := overlay_re.fullmatch(overlay.name.replace('_', '.')):
@@ -348,7 +371,7 @@ def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
                 elif pf := version_or_pf(overlay.name.replace('_', '.'), default=False):
                     formats = pf
                 else:
-                    raise ValueError(f'Unregistered overlay {overlay.name!r}, add it to pack.mcmeta or name it after the version(s) it is for')
+                    raise ValueError(f'Unregistered overlay {overlay.name!r}, add it to pack.mcmeta or name it after the version(s) it is for (1_20_2, 1_20_3-1_20_5)')
                 registered_overlays.insert(0, {
                     'formats': formats,
                     'directory': overlay.name,
@@ -359,7 +382,7 @@ def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
         (output_folder / 'pack.mcmeta').write_text(json.dumps(pack_meta, indent=4))
         comp_pack(output_folder, pack_format, source, verbose)
 
-    if has_datapack and is_zip:
+    if has_datapack and (is_zip or is_jar):
         cwd = Path.cwd()
         try:
             chdir(output_folder.parent)
@@ -367,6 +390,8 @@ def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
         finally:
             chdir(cwd)
             shutil.rmtree(output_folder)
+        if is_jar:
+            shutil.move(output.removesuffix('.jar') + '.zip', output)
 
     func_files = {}
     for f in sorted(input.glob(f'*.{FUNC_EXT}')):
@@ -385,10 +410,53 @@ def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
         print("No datapack/func_files found!")
 
 
-def init_template(*, name: str, description: str, pack_format: int, output: str, namespace: str, **_):
-    from textwrap import dedent
+def init_modded_template(name: str, description: str, output: Path, namespace: str):
+    (output / 'fabric.mod.json').write_text(json.dumps({
+        "schemaVersion": 1,
+        "id": namespace,
+        "version": "1.0",
+        "name": name,
+        "description": description,
+        "authors": [],
+        "depends": {
+            "minecraft": "*"
+        },
+        "icon": "pack.png"
+    }, indent=4, sort_keys=True))
+    (output / 'mods.toml').write_text(textwrap.dedent(f'''
+        # By default 'mods.toml' will be copied to 'neoforge.mods.toml' as well, 
+        # Create a separate 'neoforge.mods.toml' to override values here
+        modLoader="lowcodefml"
+        loaderVersion="[1,)"
+        license="All Rights Reserved"
+        showAsResourcePack=false
+        showAsDataPack=false
+
+        [[mods]]
+        modId="{namespace}"
+        version="1.0"
+        description="""{description}"""
+        logoFile="pack.png"
+        authors=""
+    '''.lstrip('\n')))
+
+
+def init_template(*, name: str, description: str, pack_format: int, output: str, modded: bool | None, namespace: str, **_):
+    if modded and (Path(output or '.') / 'pack.mcmeta').is_file():
+        path = Path(output or '.')
+        meta = read_pack_meta(path)
+        description = description or meta.get('pack', {}).get('description')
+        if not (description and isinstance(description, str)):
+            description = input('Description ():')
+        namespaces = [d.name for d in (path / 'data').iterdir() if d.is_dir() and d.name != 'minecraft']
+        default_ns = namespaces and namespaces[0]
+        namespace = namespace  or input(f'Namespace ({default_ns}): ') or default_ns
+        def_name = path.parent.resolve().name
+        name = name or input(f'Name ({def_name}):') or def_name
+        init_modded_template(name, description, path, namespace)
+        return
     if not all((name, description, pack_format, output, namespace)):
-        print('Leave a field empty to have it default')
+        print('Leave a field empty to have it set to its default value')
     name = name or input('Datapack Name (Datapack): ') or 'Datapack'
     def_ns = re.sub(r'\W', '-', name.lower().replace(' ', '_'))
     namespace = namespace or input(f'Namespace ({def_ns}): ') or def_ns
@@ -405,11 +473,16 @@ def init_template(*, name: str, description: str, pack_format: int, output: str,
     v = v and f' for version {v}'
     description = description or input(f'Description (Datapack {name!r}{v}): ') or \
                   f'Datapack {name!r}{v}'
+    modded = modded if modded is not None else input('Add modded metadata for '
+                                                     'forge/fabric/neoforge? y/n (n): ')[:1].lower() == 'y'
     output: str = output or input(f'Output Directory ({name.replace(" ", "_")}): ') or name.replace(' ', '_')
     output: Path = Path(output).absolute()
+    if (output / 'data').exists() or (output / 'pack.mcmeta').exists():
+        raise ValueError('data or pack.mcmeta already present in this directory, '
+                         'remove them to generate the template, or specify a different directory.')
     source = (output / 'data' / namespace / get_folder("source", pf=pack_format))
     source.mkdir(parents=True, exist_ok=True)
-    (source / f'main.{DATA_EXT}').write_text(dedent(f'''
+    (source / f'main.{DATA_EXT}').write_text(textwrap.dedent(f'''
         /function tick [tick]:
             /seed
         /function load [load]:
@@ -421,7 +494,9 @@ def init_template(*, name: str, description: str, pack_format: int, output: str,
             'supported_formats': {'min_inclusive': pack_format, 'max_inclusive': pack_format},
             'description': description
         }
-    }, indent=4))
+    }, indent=4, sort_keys=True))
+    if modded:
+        init_modded_template(name, description, output, namespace)
 
 
 def update_pack_format(*, input: str, target: str, min: str, max: str, **_):
@@ -441,7 +516,7 @@ def update_pack_format(*, input: str, target: str, min: str, max: str, **_):
         max = max_f(version_or_pf(max, max_pack_format) or target, target)
         pack_meta.get('pack')['supported_formats'] = {'min_inclusive': min, 'max_inclusive': max}
         pack_meta.get('pack')['pack_format'] = target
-        (input / 'pack.mcmeta').write_text(json.dumps(pack_meta, indent=4))
+        (input / 'pack.mcmeta').write_text(json.dumps(pack_meta, indent=4, sort_keys=True))
     else:
         target, min, max = target_pack_format, min_pack_format, max_pack_format
         print('edit these values via the --min, --target, or --max options')
@@ -461,7 +536,7 @@ def update_pack_format(*, input: str, target: str, min: str, max: str, **_):
 
 
 # <editor-fold defaultstate="collapsed" desc="def update(): ...">
-def get_data_from_url(url: str, default_context=True, max_redirects=10):
+def get_data_from_url(url: str, max_redirects=10):
     import ssl
     from http.client import HTTPSConnection
     from urllib.parse import urlparse
@@ -475,7 +550,7 @@ def get_data_from_url(url: str, default_context=True, max_redirects=10):
     connection.request('GET', path, headers=headers)
     response = connection.getresponse()
     if 300 <= response.status < 400 and max_redirects > 0:
-        return get_data_from_url(response.getheader('Location'), default_context, max_redirects - 1)
+        return get_data_from_url(response.getheader('Location'), max_redirects - 1)
     return response
 
 
@@ -507,9 +582,12 @@ def replace_script_with_latest():
 
 
 def update():
-    if __package__ is not None or getattr(sys, 'frozen', False):
-        print('You are using pip or the script is otherwise frozen! Cannot update.')
-        print('To update the package via pip use "pip install --upgrade packscript"' + ("" if __package__ is not None else "!"))
+    if __package__ is not None:
+        print('You are using pip! Cannot update.')
+        print('To update the package via pip use "pip install --upgrade packscript"')
+        return
+    if getattr(sys, 'frozen', False):
+        print('The script is frozen! (embedded in an exe or zip etc.) Cannot update.')
         return
     latest = get_latest_version()
     if latest == __version__:
@@ -562,6 +640,9 @@ def main():
     parser_init.add_argument('-d', '--description', type=str, help='The description of the datapack', default='')
     parser_init.add_argument('-f', '--pack-format', type=int,
                              help='Pack format (keeps track of compatible versions)', default=0)
+    parser_init.add_argument('-m', '--modded', help='Init modded config files, for fabric, forge, and neoforge',
+                             action='store_true', default=None)
+    parser_init.add_argument('--no-modded', action='store_false', dest='modded', help='Do not initialize any modded config files')
 
     # "pack_format" command
     parser_pack_format = subparsers.add_parser('pack_format', aliases=['pf'],

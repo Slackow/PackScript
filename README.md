@@ -125,55 +125,57 @@ You can also create a line like:
 in order to define a function within another function without having an actual line.
 It's unlikely for this to be useful though, as such a function could be pulled to the top level.
 
-## Create Statements
+## The `dp` Object
 
-Create statements are used for generating non-function files, mainly JSON. Currently, 
-they don't support interpolation in determining their names/type, which can be circumvented using the internal `__other__` function.
-See the Python output below to learn how.
+The `dp` object provides a flexible way to create, manipulate, and delete datapack files directly from your code.
 
-Their values are allowed to be lists, dictionaries, strings, or bytes.
+### Basic Usage
 
-You can also specify a file extension in their name, if not included `.json` will be appended.
+You can use `dp` with either dot notation or dictionary-style access:
 
-Not specifying a namespace for the file name will use the same namespace as the source file.
-
-Lists and dictionaries will be converted into JSON before being written to the file,
-this is done with Python's builtin JSON library.<br>
-(`None` -> `null`, `True` -> `true`, `False` -> `false`)
-
-a String or Bytes object will just be written raw to the file, but I do not know what this would be useful for.
-
-```
-=== data/main/source/main.dps ===
-create tags/block ns:chests -> {
+```python
+# Dot notation
+dp.tags.block.chests = {
     "values": [
-        "chest",
-        "trapped_chest",
-        "ender_chest"
+        "minecraft:chest",
+        "minecraft:trapped_chest",
+        "minecraft:ender_chest"
     ]
 }
-```
-outputs
-```
-=== data/ns/tags/block/chests.json ===
-{
-    "values": [
-        "chest",
-        "trapped_chest",
-        "ender_chest"
-    ]
+
+# Dictionary-style access
+dp["tags/block", "example:metals"] = {
+    "values": ["iron_block", "gold_block"]
 }
 ```
 
-Of course, you do not need to specify a literal dictionary right after.
-```
-def tag(*values):
-    return {"values": values}
-    
-create tags/block chests -> \
-    tag('chest', 'trapped_chest', 'ender_chest')
+### Modifying and Accessing Files
+
+Files created with `dp` can be accessed and modified later:
+
+```python
+# Add a value to existing tag
+dp.tags.block.chests["values"].append("minecraft:barrel")
+
+# Delete a file or property
+del dp.tags.block.outdated_tag
 ```
 
+### Dynamic Paths
+
+The `dp` object fully supports dynamic paths for programmatic file generation:
+
+```python
+# Generate multiple related files
+for material in ["iron", "gold", "diamond"]:
+    dp.recipe[f"{material}_upgrade"] = {
+        "type": "minecraft:crafting_shapeless",
+        "ingredients": [{"item": f"minecraft:{material}_ingot"}],
+        "result": {"item": f"minecraft:{material}_block"}
+    }
+```
+
+The `dp` object works with all datapack file types and automatically handles namespacing based on the source file's namespace, making it a powerful tool for organizing and manipulating your datapack structure.
 ## `capture_lines()` Function
 
 The capture_lines() function diverts command lines to a list of strings instead of directly writing to a function file.
@@ -229,7 +231,7 @@ function example_pack:say_something
 
 # Example Usage + PackScript Reloader
 
-![packscript_ex1](https://github.com/Slackow/PackScript/raw/main/.github/photos/packscript_ex2.png)
+![packscript_ex1](https://github.com/Slackow/PackScript/raw/main/.github/photos/packscript_ex1.png)
 
 ![minecraft_output](https://github.com/Slackow/PackScript/raw/main/.github/photos/in_game_img.png)
 
@@ -266,12 +268,19 @@ with __function__(__f):
     __line__(rf""" say packscript> $(message) < that is just text """[1:-1])
     __line__(rf""" say packscript> 2 + 2 = {2 + 2} < this works because it is compile time """[1:-1])
 
-__other__("tags/blocks")["example:chests"] = {
-        'values': [
-            'chest',
-        'trapped_chest',
-        'ender_chest'
-    ]
+dp.tags.block.chest = {
+   'values': [
+      'chest',
+      'trapped_chest'
+   ]
+}
+
+dp.tags.block.chest['values'].append('ender_chest')
+
+del dp.tags.block.chest
+
+dp['tags/block', 'chest'] = {
+   'values': ['chest', 'trapped_chest', 'ender_chest']
 }
 ```
 
@@ -319,13 +328,21 @@ it's preferable to do just call the following instead:
 
 `packscript init`
 
+There is also the `packscript init --modded` command, it lets you add config files for compiling to fabric, forge, and neoforge.
+
+It is recommended that you take a look at the files it generates to add any additional metadata you may want.
+
 ## Compile Action
 When a PackScript file is being compiled it will first print its location to the console, this is so if an error is encountered
 you can easily tell which file was last being run, and ensure that your `.dps` files are being executed.
 
-The input directory should be a directory that contains a `data` and `pack.mcmeta` and optional `pack.png` or any directory that contains `.fps` files
+The input directory should be a directory that contains a `data` and `pack.mcmeta` and optional `pack.png` and `overlays` or any directory that contains `.fps` files
 
-The output will either be a directory or a zip file (generated by creating a temporary directory with the same name)
+The output will either be a directory, a zip file, or a jar file (jar file will make a mod that applies your pack)
+
+When compiling to a jar, an `assets` folder can also be included to include a resourcepack.
+
+ex: `packscript c -o output`, `packscript c -o datapack.zip`, `packscript c -o mod.jar`
 
 ## Debugging
 When there is an error in your PackScript file,
