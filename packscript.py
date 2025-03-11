@@ -15,7 +15,7 @@ modified_by = ''
 
 latest_mc_version = '1.21.4'
 
-import textwrap, argparse, json, re, sys, shutil
+import textwrap, argparse, json, re, sys, shutil, tempfile
 from os import chdir
 from pathlib import Path
 
@@ -47,7 +47,7 @@ DATA_EXT = 'dps'
 FUNC_EXT = 'fps'
 
 if __v_type__ not in ('release', 'dev'):
-    raise ValueError(f'Version type {__v_type__!r} is invalid')
+    raise AssertionError(f'Version type {__v_type__!r} is invalid')
 
 
 def ns(resource: str, /, *, default: str = 'minecraft'):
@@ -316,98 +316,125 @@ def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
 
     is_jar = output.endswith('.jar')
     is_zip = output.endswith('.zip')
-    output_folder = Path(output.removesuffix('.zip').removesuffix('.jar')).absolute()
-    if not output_folder.stem:
+    final_output_folder = Path(output.removesuffix('.zip').removesuffix('.jar')).absolute()
+    if not final_output_folder.stem:
         raise ValueError('Please provide an output with a filename')
-    if input == output_folder:
+    if input == final_output_folder:
         raise shutil.SameFileError('Input and output directories must not have the same')
-    if has_datapack:
-        data = input / 'data'
-        if not data.exists() or not (input / 'pack.mcmeta').exists():
-            raise FileNotFoundError('Need data folder and pack.mcmeta')
-        if is_jar and not any((input / m).exists() for m in ('fabric.mod.json', 'mods.toml', 'neoforge.mods.toml')):
-            raise FileNotFoundError(f'Need "fabric.mod.json" and/or "mods.toml" and/or "neoforge.mods.toml" Use {sys.argv[0]} init --modded')
-        output_folder.mkdir(parents=True, exist_ok=True)
-        for file in output_folder.iterdir():
-            if file.is_file() or file.is_symlink():
-                file.unlink()
-            else:
-                shutil.rmtree(file)
-        def config(loc: str, *, type='file', dst='', mkdirs=False, dirs_exist_ok=False) -> bool:
-            src = input / loc
-            dst = (output_folder / (dst or loc))
-            if not (src.is_file() if type == 'file' else src.is_dir()):
-                return False
-            if mkdirs:
-                dst.parent.mkdir(parents=True, exist_ok=True)
-            if type == 'file':
-                shutil.copy(src, dst)
-            else:
-                shutil.copytree(src, dst, dirs_exist_ok=dirs_exist_ok)
-            return True
 
-        has_overlays = config('overlays', type='dir', dst='.', dirs_exist_ok=True)
-        config('data', type='dir')
-        config('pack.png')
-        if is_jar:
-            config('assets', type='dir')
-            config('fabric.mod.json')
-            config('mods.toml', dst='META-INF/mods.toml', mkdirs=True)
-            config('mods.toml', dst='META-INF/neoforge.mods.toml')
-            config('neoforge.mods.toml', dst='META-INF/neoforge.mods.toml', mkdirs=True)
-        pack_meta = read_pack_meta(input)
-        pack_format = pack_meta.get('pack').get('pack_format')
-        if not isinstance(pack_format, int):
-            raise ValueError('Invalid pack.mcmeta file')
-        if has_overlays:
-            registered_overlays = pack_meta.setdefault('overlays', {}).setdefault('entries', [])
-            overlay_re = re.compile(r'([\d.]+)-([\d.]+)')
-            for overlay in sorted((input / 'overlays').iterdir()):
-                if overlay.name in (reg['directory'] for reg in registered_overlays):
-                    continue
-                elif overlay_match := overlay_re.fullmatch(overlay.name.replace('_', '.')):
-                    min, max = map(version_or_pf, overlay_match.groups())
-                    formats = {'min_inclusive': min, 'max_inclusive': max}
-                elif pf := version_or_pf(overlay.name.replace('_', '.'), default=False):
-                    formats = pf
+    # Create a temporary directory for building
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_output = Path(temp_dir) / final_output_folder.name
+        temp_output.mkdir(parents=True, exist_ok=True)
+
+        if has_datapack:
+            data = input / 'data'
+            if not data.exists() or not (input / 'pack.mcmeta').exists():
+                raise FileNotFoundError('Need data folder and pack.mcmeta')
+            if is_jar and not any((input / m).exists() for m in ('fabric.mod.json', 'mods.toml', 'neoforge.mods.toml')):
+                raise FileNotFoundError(f'Need "fabric.mod.json" and/or "mods.toml" and/or '
+                                        f'"neoforge.mods.toml" Use {sys.argv[0]} init --modded')
+
+            def config(loc: str, *, dst='', mkdirs=False, dirs_exist_ok=False) -> bool:
+                type = 'dir' if loc.endswith('/') else 'file'
+                src = input / loc
+                dst = temp_output / (dst or loc)
+                if not (src.is_file() if type == 'file' else src.is_dir()):
+                    if src.exists():
+                        raise (IsADirectoryError if type == 'file' else NotADirectoryError)(loc)
+                    return False
+                if mkdirs:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                if type == 'file':
+                    shutil.copy(src, dst)
                 else:
-                    raise ValueError(f'Unregistered overlay {overlay.name!r}, add it to pack.mcmeta or name it after the version(s) it is for (1_20_2, 1_20_3-1_20_5)')
-                registered_overlays.insert(0, {
-                    'formats': formats,
-                    'directory': overlay.name,
-                })
-            for overlay in registered_overlays:
-                path = output_folder / overlay['directory']
-                comp_pack(path, pack_format, source, verbose)
-        (output_folder / 'pack.mcmeta').write_text(json.dumps(pack_meta, indent=4))
-        comp_pack(output_folder, pack_format, source, verbose)
+                    shutil.copytree(src, dst, dirs_exist_ok=dirs_exist_ok)
+                return True
 
-    if has_datapack and (is_zip or is_jar):
-        cwd = Path.cwd()
-        try:
-            chdir(output_folder.parent)
-            shutil.make_archive(output_folder.stem, 'zip', output_folder.name)
-        finally:
-            chdir(cwd)
-            shutil.rmtree(output_folder)
-        if is_jar:
-            shutil.move(output.removesuffix('.jar') + '.zip', output)
+            has_overlays = config('overlays/', dst='.', dirs_exist_ok=True)
+            config('data/')
+            config('pack.png')
+            if is_jar:
+                config('assets/')
+                config('fabric.mod.json')
+                config('mods.toml', dst='META-INF/mods.toml', mkdirs=True)
+                config('mods.toml', dst='META-INF/neoforge.mods.toml')
+                config('neoforge.mods.toml', dst='META-INF/neoforge.mods.toml', mkdirs=True)
+            pack_meta = read_pack_meta(input)
+            pack_format = pack_meta.get('pack').get('pack_format')
+            if not isinstance(pack_format, int):
+                raise ValueError('Invalid pack.mcmeta file')
+            if has_overlays:
+                registered_overlays = pack_meta.setdefault('overlays', {}).setdefault('entries', [])
+                overlay_re = re.compile(r'([\d.]+)-([\d.]+)')
+                for overlay in sorted((input / 'overlays').iterdir()):
+                    if overlay.name in (reg['directory'] for reg in registered_overlays):
+                        continue
+                    elif overlay_match := overlay_re.fullmatch(overlay.name.replace('_', '.')):
+                        min, max = map(version_or_pf, overlay_match.groups())
+                        formats = {'min_inclusive': min, 'max_inclusive': max}
+                    elif pf := version_or_pf(overlay.name.replace('_', '.'), default=False):
+                        formats = pf
+                    else:
+                        raise ValueError(f'Unregistered overlay {overlay.name!r}, add it to pack.mcmeta or name it '
+                                         f'after the version(s) it is for (1_20_2, 1_20_3-1_20_5)')
+                    registered_overlays.insert(0, {
+                        'formats': formats,
+                        'directory': overlay.name,
+                    })
+                for overlay in registered_overlays:
+                    path = temp_output / overlay['directory']
+                    comp_pack(path, pack_format, source, verbose)
+            (temp_output / 'pack.mcmeta').write_text(json.dumps(pack_meta, indent=4))
+            comp_pack(temp_output, pack_format, source, verbose)
 
-    func_files = {}
-    for f in sorted(input.glob(f'*.{FUNC_EXT}')):
-        func_stack = [f.name]
-        func_files[f.name] = []
-        globals = build_globals(func_stack, [], func_files, {})
+        func_files = {}
+        for f in sorted(input.glob(f'*.{FUNC_EXT}')):
+            func_stack = [f.name]
+            func_files[f.name] = []
+            globals = build_globals(func_stack, [], func_files, {})
 
-        comp_file(input, f, globals, verbose=verbose)
-    if func_files:
-        output_folder.mkdir(parents=True, exist_ok=True)
-    for f, content in func_files.items():
-        f = f[f.find(':') + 1:].replace('/', '_').removesuffix(f'.{FUNC_EXT}')
-        mcfunction_path = output_folder / f'{f}.mcfunction'
-        mcfunction_path.write_text(get_header() + '\n'.join(content) + '\n')
-    if not func_files and not has_datapack:
-        print("No datapack/func_files found!")
+            comp_file(input, f, globals, verbose=verbose)
+        if func_files:
+            temp_output.mkdir(parents=True, exist_ok=True)
+        for f, content in func_files.items():
+            f = f[f.find(':') + 1:].replace('/', '_').removesuffix(f'.{FUNC_EXT}')
+            mcfunction_path = temp_output / f'{f}.mcfunction'
+            mcfunction_path.write_text(get_header() + '\n'.join(content) + '\n')
+        if not func_files and not has_datapack:
+            print("No datapack/func_files found!")
+            return
+
+        if is_zip or is_jar:
+            cwd = Path.cwd()
+            try:
+                chdir(temp_dir)
+                shutil.make_archive(temp_output.name, 'zip', temp_output.name)
+                if is_jar:
+                    zip_path = Path(temp_dir) / f"{temp_output.name}.zip"
+                    jar_path = final_output_folder.parent / f"{final_output_folder.name}.jar"
+                    shutil.copy(zip_path, jar_path)
+                else:
+                    zip_path = Path(temp_dir) / f"{temp_output.name}.zip"
+                    final_zip_path = final_output_folder.parent / f"{final_output_folder.name}.zip"
+                    shutil.copy(zip_path, final_zip_path)
+            finally:
+                chdir(cwd)
+        else:
+            if final_output_folder.exists():
+                for item in final_output_folder.iterdir():
+                    if item.is_file() or item.is_symlink():
+                        item.unlink()
+                    else:
+                        shutil.rmtree(item)
+            else:
+                final_output_folder.mkdir(parents=True, exist_ok=True)
+
+            for item in temp_output.iterdir():
+                if item.is_file():
+                    shutil.copy2(item, final_output_folder / item.name)
+                else:
+                    shutil.copytree(item, final_output_folder / item.name, dirs_exist_ok=True)
 
 
 def init_modded_template(name: str, description: str, output: Path, namespace: str):
@@ -666,7 +693,7 @@ def main():
 
     args_dict = {key.replace('-', '_'): val for key, val in vars(args).items()}
     if args.version:
-        print(f'PackScript {__version__}-{__v_type__} (Python {sys.version})')
+        print(f'PackScript {__version__}-{__v_type__}')
     elif args.command is None:
         parser.print_help()
     elif args.command.startswith('c'):
