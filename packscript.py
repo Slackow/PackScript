@@ -4,7 +4,7 @@
 # requires-python = ">=3.12"
 # ///
 __version__ = '0.2.2'
-__v_type__  = 'dev'
+__v_type__  = 'release'
 __author__  = 'Slackow'
 __license__ = 'MIT'
 
@@ -193,14 +193,14 @@ def read_pack_meta(input: Path) -> dict:
     return pack_meta
 
 
-def comp_file(parent: Path, filename: Path, globals: dict[str, object], verbose=False):
+def comp_file(output_folder: Path, parent: Path, filename: Path, globals: dict[str, object], verbose=False):
     command_re = re.compile(r'([\t ]*)/(.*)')
     interpolation_re = re.compile(r'\$\{\{(.*?)}}|(?<!^)\$([a-zA-Z_]\w*)')
     create_statement_re = re.compile(r'([\t ]*)create\b[ \t]*([\w/]+)\b[ \t]*([a-z\d:/_.-]*)[ \t]*->(.*)')
     code = []
     concat_line = None
     curr_file = parent / filename
-    print(filename)
+    print(filename.relative_to(output_folder))
     for line in curr_file.read_text().splitlines():
         line = line.rstrip()
         if concat_line is not None:
@@ -260,7 +260,7 @@ def comp_file(parent: Path, filename: Path, globals: dict[str, object], verbose=
         sys.path = old_path
 
 
-def comp_pack(output_folder, pack_format, source, verbose):
+def comp_pack(output_folder, pack_format, source, verbose, overlay=False):
     function_tags: dict[str, list[str]] = {}
     other: dict[str, dict[str, object]] = {}
     for namespace in sorted((output_folder / 'data').iterdir()):
@@ -276,7 +276,8 @@ def comp_pack(output_folder, pack_format, source, verbose):
             raise ValueError('Legacy "sources" folder detected! Rename your folders to be singular!')
 
         for filename in sorted(working_folder.rglob(f'*.{DATA_EXT}')):
-            comp_file(working_folder, filename, globals, verbose=verbose)
+            base = output_folder.parent if overlay else output_folder
+            comp_file(base, working_folder, filename, globals, verbose=verbose)
 
         if not source:
             shutil.rmtree(namespace / get_folder('source', pack_format), ignore_errors=True)
@@ -365,6 +366,7 @@ def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
             pack_format = pack_meta.get('pack').get('pack_format')
             if not isinstance(pack_format, int):
                 raise ValueError('Invalid pack.mcmeta file')
+            comp_pack(temp_output, pack_format, source, verbose)
             if has_overlays:
                 registered_overlays = pack_meta.setdefault('overlays', {}).setdefault('entries', [])
                 overlay_re = re.compile(r'([\d.]+)-([\d.]+|future)')
@@ -385,9 +387,8 @@ def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
                     })
                 for overlay in registered_overlays:
                     path = temp_output / overlay['directory']
-                    comp_pack(path, pack_format, source, verbose)
+                    comp_pack(path, pack_format, source, verbose, overlay=True)
             (temp_output / 'pack.mcmeta').write_text(json.dumps(pack_meta, indent=4))
-            comp_pack(temp_output, pack_format, source, verbose)
 
         func_files = {}
         for f in sorted(input.glob(f'*.{FUNC_EXT}')):
@@ -395,7 +396,7 @@ def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
             func_files[f.name] = []
             globals = build_globals(func_stack, [], func_files, {})
 
-            comp_file(input, f, globals, verbose=verbose)
+            comp_file(input, input, f, globals, verbose=verbose)
         if func_files:
             temp_output.mkdir(parents=True, exist_ok=True)
         for f, content in func_files.items():
@@ -704,7 +705,11 @@ def main():
     elif args.command.startswith('u'):
         update()
     else:
-        init_template(**args_dict)
+        try:
+            init_template(**args_dict)
+        except KeyboardInterrupt:
+            print('\nInterrupted')
+            sys.exit(130)
 
 
 if __name__ == '__main__':
