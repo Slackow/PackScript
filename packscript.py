@@ -3,7 +3,7 @@
 # /// script
 # requires-python = ">=3.12"
 # ///
-__version__ = '0.2.2'
+__version__ = '0.2.3'
 __v_type__  = 'release'
 __author__  = 'Slackow'
 __license__ = 'MIT'
