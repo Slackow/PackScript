@@ -13,7 +13,7 @@ __license__ = 'MIT'
 modified_by = ''
 # # # # # # # # # # # # # # # # # # # # # #
 
-latest_mc_version = '1.21.4'
+latest_mc_version = '1.21.5'
 
 import textwrap, argparse, json, re, sys, shutil, tempfile
 from os import chdir
@@ -26,6 +26,7 @@ def ver(base_version, start, end, *, pf):
 
 pack_formats = {
     'future': 9001,
+    '1.21.5': 71,
     '1.21.4': 61,
     '1.21.3': 57, '1.21.2': 57,
     '1.21.1': 48, '1.21': 48,
