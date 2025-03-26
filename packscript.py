@@ -367,7 +367,7 @@ def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
                 raise ValueError('Invalid pack.mcmeta file')
             if has_overlays:
                 registered_overlays = pack_meta.setdefault('overlays', {}).setdefault('entries', [])
-                overlay_re = re.compile(r'([\d.]+)-([\d.]+)')
+                overlay_re = re.compile(r'([\d.]+)-([\d.]+|future)')
                 for overlay in sorted((input / 'overlays').iterdir()):
                     if overlay.name in (reg['directory'] for reg in registered_overlays):
                         continue
