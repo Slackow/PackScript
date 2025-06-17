@@ -3,7 +3,7 @@
 # /// script
 # requires-python = ">=3.12"
 # ///
-__version__ = '0.2.3'
+__version__ = '0.2.4'
 __v_type__  = 'release'
 __author__  = 'Slackow'
 __license__ = 'MIT'
@@ -13,7 +13,7 @@ __license__ = 'MIT'
 modified_by = ''
 # # # # # # # # # # # # # # # # # # # # # #
 
-latest_mc_version = '1.21.5'
+latest_mc_version = '1.21.6'
 
 import textwrap, argparse, json, re, sys, shutil, tempfile
 from os import chdir
@@ -26,6 +26,7 @@ def ver(base_version, start, end, *, pf):
 
 pack_formats = {
     'future': 9001,
+    '1.21.6': 80,
     '1.21.5': 71,
     '1.21.4': 61,
     '1.21.3': 57, '1.21.2': 57,
@@ -121,6 +122,9 @@ def build_globals(func_stack: list, capturer_stack: list, func_files: dict,
 
         def __exit__(self, exc_type, exc_val, exc_tb):
             func_stack.pop()
+
+        def replace(self):
+            func_stack[-1] = self.func_name
 
     def __function__(func_name: str) -> FuncContext:
         return FuncContext(func_name)
@@ -219,15 +223,17 @@ def comp_file(output_folder: Path, parent: Path, filename: Path, globals: dict[s
             # It's basically grabbing from either the first or second group, since they're mutually exclusive
             contents = interpolation_re.sub(r'{\1\2}', contents)
             extra_line = None
-            if contents.endswith(':'):
+            if (end_chr := contents[-1:]) in (':', ';'):
                 func_def_start = right_most_function(contents)
                 # print('func: ', line)
                 if func_def_start is None:
-                    raise ValueError(f'Command {contents!r} ends with colon but does not contain function')
+                    raise ValueError(f'Command {contents!r} ends with colon/semicolon but does not contain function')
                 func_def = contents[func_def_start:-1].strip()
                 code.append(f'{indent}__f, __extra = __function_name__(f"{func_def}")')
                 contents = f'{contents[:func_def_start]} {{__f}}{{__extra}}'
                 extra_line = f'{indent}with __function__(__f):'
+                if end_chr == ';':
+                    extra_line = f'{indent}__function__(__f).replace()'
             code.append(f'{indent}__line__(rf""" {contents} """[1:-1])')
             if extra_line:
                 code.append(extra_line)

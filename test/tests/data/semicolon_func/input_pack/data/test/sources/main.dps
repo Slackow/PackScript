@@ -1,0 +1,13 @@
+/function tick [tick]:
+    /execute as @a at @s run function:
+        /execute if items @s weapon.mainhand cookie run function:
+            /execute store result storage args length int 1 if data storage s items[]
+            /function [] with storage args;
+            /$execute store result storage args index int 1 run random value 1..$(length)
+            /function [] with storage args;
+            /$data modify storage args item set from storage s items[-$(index)]
+            /function [] with storage args;
+            /$give @p $(item)
+/function load [load]:
+    /tellraw @a "Loaded BasicTest"
+    /data modify storage s items set value [diamond, iron_ingot, gold_ingot]
