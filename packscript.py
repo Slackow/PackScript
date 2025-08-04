@@ -3,8 +3,8 @@
 # /// script
 # requires-python = ">=3.12"
 # ///
-__version__ = '0.2.4'
-__v_type__  = 'release'
+__version__ = '0.2.5'
+__v_type__  = 'dev'
 __author__  = 'Slackow'
 __license__ = 'MIT'
 
@@ -13,7 +13,7 @@ __license__ = 'MIT'
 modified_by = ''
 # # # # # # # # # # # # # # # # # # # # # #
 
-latest_mc_version = '1.21.6'
+latest_mc_version = '1.21.8'
 
 import textwrap, argparse, json, re, sys, shutil, tempfile
 from os import chdir
@@ -26,6 +26,7 @@ def ver(base_version, start, end, *, pf):
 
 pack_formats = {
     'future': 9001,
+    '1.21.8': 81, '1.21.7': 81,
     '1.21.6': 80,
     '1.21.5': 71,
     '1.21.4': 61,
@@ -91,7 +92,7 @@ def build_globals(func_stack: list, capturer_stack: list, func_files: dict,
 
     func_def_re = re.compile(r'^([a-z\d:/_-]*)[ \t]*(?:\[([a-z\d:/_, -]*)](.*))?$')
 
-    def __function_name__(func_def: str) -> (str, str):
+    def __function_name__(func_def: str) -> tuple[str, str]:
         func_def_match = func_def_re.fullmatch(func_def)
         if not func_def_match:
             raise ValueError(f'Invalid function definition: {func_def!r}')
@@ -381,7 +382,7 @@ def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
                         continue
                     elif overlay_match := overlay_re.fullmatch(overlay.name.replace('_', '.')):
                         min, max = map(version_or_pf, overlay_match.groups())
-                        formats = {'min_inclusive': min, 'max_inclusive': max}
+                        formats = [min, max]
                     elif pf := version_or_pf(overlay.name.replace('_', '.'), default=False):
                         formats = pf
                     else:
@@ -526,7 +527,7 @@ def init_template(*, name: str, description: str, pack_format: int, output: str,
     (output / 'pack.mcmeta').write_text(json.dumps({
         'pack': {
             'pack_format': pack_format,
-            'supported_formats': {'min_inclusive': pack_format, 'max_inclusive': pack_format},
+            'supported_formats': [pack_format, pack_format],
             'description': description
         }
     }, indent=4, sort_keys=True))
@@ -549,7 +550,7 @@ def update_pack_format(*, input: str, target: str, min: str, max: str, **_):
         target = version_or_pf(target, target_pack_format)
         min = min_f(version_or_pf(min, min_pack_format) or target, target)
         max = max_f(version_or_pf(max, max_pack_format) or target, target)
-        pack_meta.get('pack')['supported_formats'] = {'min_inclusive': min, 'max_inclusive': max}
+        pack_meta.get('pack')['supported_formats'] = [min, max]
         pack_meta.get('pack')['pack_format'] = target
         (input / 'pack.mcmeta').write_text(json.dumps(pack_meta, indent=4, sort_keys=True))
     else:
