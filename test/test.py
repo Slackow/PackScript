@@ -3,6 +3,12 @@ import os
 import shutil
 import sys
 import unittest
+from pathlib import Path
+
+parent_dir = Path(__file__).resolve().parent.parent
+sys.path.append(str(parent_dir))
+
+from packscript import version_or_pf
 
 
 def packscript(*args):
@@ -59,6 +65,16 @@ class TestPackScriptCompilation(unittest.TestCase):
                 # Compare output directory with expected output directory
                 self.deep_compare_dirs(output_dir, expected_output_dir)
         print(f'\nTested {len(test_cases)} cases')
+
+class TestPackFormat(unittest.TestCase):
+    def test_pack_format(self):
+        """ Test the parsing of pack formats """
+        self.assertEqual(version_or_pf("26.1"), (101, 1))
+        self.assertEqual(version_or_pf("26.50", -1), -1)
+        self.assertEqual(version_or_pf("p26.1", -1), -1)
+        self.assertEqual(version_or_pf("v26.1"), (101, 1))
+        self.assertEqual(version_or_pf("p4"), 4)
+        self.assertEqual(version_or_pf("v4", -1), -1)
 
 
 if __name__ == '__main__':

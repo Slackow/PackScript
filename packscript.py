@@ -3,7 +3,7 @@
 # /// script
 # requires-python = ">=3.12"
 # ///
-__version__ = '0.2.5'
+__version__ = '0.2.6'
 __v_type__  = 'release'
 __author__  = 'Slackow'
 __license__ = 'MIT'
@@ -13,7 +13,7 @@ __license__ = 'MIT'
 modified_by = ''
 # # # # # # # # # # # # # # # # # # # # # #
 
-latest_mc_version = '1.21.10'
+latest_mc_version = '26.1'
 
 import textwrap, argparse, json, re, sys, shutil, tempfile
 from os import chdir
@@ -27,6 +27,8 @@ def ver(base_version, start, end, *, pf):
 PF = int | tuple[int, int]
 pack_formats: dict[str, PF] = {
     'future': (9001, 0),
+    '26.1': (101, 1),
+    '1.21.11': (94, 1),
     '1.21.10': (88, 0), '1.21.9': (88, 0),
     '1.21.8': 81, '1.21.7': 81,
     '1.21.6': 80,
@@ -73,17 +75,23 @@ def right_most_function(contents: str) -> int:
 
 
 def version_or_pf(s: str, default: PF | None=...) -> PF:
+    prefix = s[:1]
+    if prefix not in 'pv':
+        prefix = None
+    else:
+        s = s[1:]
     res = pack_formats.get(s)
-    if res is not None:
+    if res is not None and prefix != 'p':
         return res
     try:
         dot = s.index('.')
         pf = int(s[:dot]), int(s[dot:])
-        if major_pf(pf) < DECIMATED_PF: raise ValueError("Unknown pack format/version")
+        if major_pf(pf) < DECIMATED_PF or prefix == 'v': raise ValueError("Unknown pack format/version", s)
         return pf
     except ValueError:
         try:
             pf = int(s)
+            if prefix == 'v': raise ValueError("Unknown pack format/version", s)
             return pf if pf < DECIMATED_PF else with_minor(pf)
         except ValueError as e:
             if default is not ...:
@@ -349,7 +357,7 @@ def comp_pack(output_folder: Path, pack_format: int, source: bool, verbose: bool
                     other_path.write_text(content)
 
 
-def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
+def compile(*, input: str, output: str, verbose: bool, source: bool, **_):
     input: Path = Path(input or '.').absolute()
     has_datapack = (input / 'data').is_dir()
 
@@ -406,7 +414,7 @@ def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
             comp_pack(temp_output, pack_format, source, verbose)
             if has_overlays:
                 registered_overlays = pack_meta.setdefault('overlays', {}).setdefault('entries', [])
-                overlay_re = re.compile(r'([\d.]+)-([\d.]+|future)')
+                overlay_re = re.compile(r'([pv]?[\d.]+)-([pv]?[\d.]+|future)')
                 for overlay in sorted((input / 'overlays').iterdir()):
                     if overlay.name in (reg['directory'] for reg in registered_overlays):
                         continue
@@ -422,6 +430,7 @@ def comp(*, input: str, output: str, verbose: bool, source: bool, **_):
                         'min_format': with_minor(min), 'max_format': with_minor(max),
                         'directory': overlay.name,
                     }
+
                     if with_minor(pack_meta.get('pack', {}).get('min_format', 0)) >= (DECIMATED_PF, 0):
                         del overlay_value['formats']
                     registered_overlays.insert(0, overlay_value)
@@ -574,6 +583,7 @@ def init_template(*, name: str, description: str, pack_format: PF, output: str, 
         init_modded_template(name, description, output, namespace)
 
 
+# <editor-fold defaultstate="collapsed" desc="def update_pack_format(): ...">
 def update_pack_format(*, input: str, target: str, min: str, max: str, **_) -> None:
     input: Path = Path(input).absolute()
     pack_meta = read_pack_meta(input)
@@ -616,7 +626,7 @@ def update_pack_format(*, input: str, target: str, min: str, max: str, **_) -> N
     print(c(f"{'target pack_format:':<20}{target!s:>9} {versions_of(target)}"))
     if min:
         print(c(f"{'min pack_format:':<20}{min!s:>9} {versions_of(min)}"))
-
+# </editor-fold>
 
 # <editor-fold defaultstate="collapsed" desc="def update(): ...">
 def get_data_from_url(url: str, max_redirects=10):
@@ -753,7 +763,7 @@ def main():
     elif args.command is None:
         parser.print_help()
     elif args.command.startswith('c'):
-        comp(**args_dict)
+        compile(**args_dict)
     elif args.command.startswith('p'):
         update_pack_format(**args_dict)
     elif args.command.startswith('u'):
