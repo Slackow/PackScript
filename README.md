@@ -231,7 +231,7 @@ function example_pack:say_something
 
 # Example Usage + PackScript Reloader
 
-![packscript_ex1](https://github.com/Slackow/PackScript/raw/main/.github/photos/packscript_ex1.png)
+![packscript_ex1](https://github.com/Slackow/PackScript/raw/main/.github/photos/packscript_ex.png)
 
 ![minecraft_output](https://github.com/Slackow/PackScript/raw/main/.github/photos/in_game_img.png)
 
