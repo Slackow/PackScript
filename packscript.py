@@ -3,7 +3,7 @@
 # /// script
 # requires-python = ">=3.12"
 # ///
-__version__ = '0.2.6'
+__version__ = '0.2.7'
 __v_type__  = 'release'
 __author__  = 'Slackow'
 __license__ = 'MIT'
@@ -13,9 +13,7 @@ __license__ = 'MIT'
 modified_by = ''
 # # # # # # # # # # # # # # # # # # # # # #
 
-latest_mc_version = '26.1'
-
-import textwrap, argparse, json, re, sys, shutil, tempfile
+import argparse, json, re, sys, shutil, tempfile, textwrap
 from os import chdir
 from pathlib import Path
 
@@ -27,7 +25,7 @@ def ver(base_version, start, end, *, pf):
 PF = int | tuple[int, int]
 pack_formats: dict[str, PF] = {
     'future': (9001, 0),
-    '26.1': (101, 1),
+    '26.1.2': (101, 1), '26.1.1': (101, 1), '26.1': (101, 1),
     '1.21.11': (94, 1),
     '1.21.10': (88, 0), '1.21.9': (88, 0),
     '1.21.8': 81, '1.21.7': 81,
@@ -49,6 +47,7 @@ pack_formats: dict[str, PF] = {
     ** ver('1.14', 1, 4, pf=4),
     '1.14': 4, '1.13.2': 4, '1.13.1': 4, '1.13': 4,
 }
+latest_mc_version = list(pack_formats)[1]
 
 DATA_EXT = 'dps'
 FUNC_EXT = 'fps'
@@ -68,13 +67,13 @@ PLURAL_CUTOFF_PF: int = 45
 DECIMATED_PF: int = 82
 
 
-def right_most_function(contents: str) -> int:
+def right_most_function(contents: str) -> int | None:
     # Use finditer to get match objects, which include the start and end positions of each match
     matches = list(func_re.finditer(contents))
     return matches[-1].end() if matches else None
 
 
-def version_or_pf(s: str, default: PF | None=...) -> PF:
+def version_or_pf(s: str, default: PF | None=None) -> PF:
     prefix = s[:1]
     if prefix not in 'pv':
         prefix = None
@@ -94,7 +93,7 @@ def version_or_pf(s: str, default: PF | None=...) -> PF:
             if prefix == 'v': raise ValueError("Unknown pack format/version", s)
             return pf if pf < DECIMATED_PF else with_minor(pf)
         except ValueError as e:
-            if default is not ...:
+            if default is not None:
                 return default
             print(f"Tried {s!r}", file=sys.stderr)
             raise e
@@ -199,11 +198,13 @@ def build_globals(func_stack: list, capturer_stack: list, func_files: dict,
             other['/'.join(self._type)].pop(n(item))
         def __getitem__(self, item: tuple[str, str] | str):
             if self._type:
+                item: str
                 return other['/'.join(self._type)][n(item)]
             type, resource = item
             return other[type][n(resource)]
         def __setitem__(self, item: tuple[str, str] | str, value: dict | list | str | bytes):
             if self._type:
+                item: str
                 other.setdefault('/'.join(self._type), {})[n(item)] = value
                 return
             type, resource = item
@@ -228,7 +229,7 @@ def read_pack_meta(input: Path) -> dict:
     if not (input / 'pack.mcmeta').is_file():
         raise FileNotFoundError('No pack.mcmeta found')
     try:
-        pack_meta = json.loads((input / 'pack.mcmeta').read_text())
+        pack_meta: dict | None = json.loads((input / 'pack.mcmeta').read_text())
     except ValueError:
         pack_meta = None
     if not pack_meta or not isinstance(pack_meta.get('pack'), dict):
@@ -358,15 +359,15 @@ def comp_pack(output_folder: Path, pack_format: int, source: bool, verbose: bool
 
 
 def compile(*, input: str, output: str, verbose: bool, source: bool, **_):
-    input: Path = Path(input or '.').absolute()
-    has_datapack = (input / 'data').is_dir()
+    input_path: Path = Path(input or '.').absolute()
+    has_datapack = (input_path / 'data').is_dir()
 
     is_jar = output.endswith('.jar')
     is_zip = output.endswith('.zip')
     final_output_folder = Path(output.removesuffix('.zip').removesuffix('.jar')).absolute()
     if not final_output_folder.stem:
         raise ValueError('Please provide an output with a filename')
-    if input == final_output_folder:
+    if input_path == final_output_folder:
         raise shutil.SameFileError('Input and output directories must not have the same')
 
     # Create a temporary directory for building
@@ -375,16 +376,16 @@ def compile(*, input: str, output: str, verbose: bool, source: bool, **_):
         temp_output.mkdir(parents=True, exist_ok=True)
 
         if has_datapack:
-            data = input / 'data'
-            if not data.exists() or not (input / 'pack.mcmeta').exists():
+            data = input_path / 'data'
+            if not data.exists() or not (input_path / 'pack.mcmeta').exists():
                 raise FileNotFoundError('Need data folder and pack.mcmeta')
-            if is_jar and not any((input / m).exists() for m in ('fabric.mod.json', 'mods.toml', 'neoforge.mods.toml')):
+            if is_jar and not any((input_path / m).exists() for m in ('fabric.mod.json', 'mods.toml', 'neoforge.mods.toml')):
                 raise FileNotFoundError(f'Need "fabric.mod.json" and/or "mods.toml" and/or '
                                         f'"neoforge.mods.toml" Use {sys.argv[0]} init --modded')
 
             def config(loc: str, *, dst='', mkdirs=False, dirs_exist_ok=False) -> bool:
                 type = 'dir' if loc.endswith('/') else 'file'
-                src = input / loc
+                src = input_path / loc
                 dst = temp_output / (dst or loc)
                 if not (src.is_file() if type == 'file' else src.is_dir()):
                     if src.exists():
@@ -407,15 +408,15 @@ def compile(*, input: str, output: str, verbose: bool, source: bool, **_):
                 config('mods.toml', dst='META-INF/mods.toml', mkdirs=True)
                 config('mods.toml', dst='META-INF/neoforge.mods.toml')
                 config('neoforge.mods.toml', dst='META-INF/neoforge.mods.toml', mkdirs=True)
-            pack_meta = read_pack_meta(input)
-            pack_format = pack_meta.get('pack').get('pack_format')
+            pack_meta = read_pack_meta(input_path)
+            pack_format = pack_meta.get('pack', {}).get('pack_format')
             if not isinstance(pack_format, int):
                 raise ValueError('Invalid pack.mcmeta file, specify a target pack_format.')
             comp_pack(temp_output, pack_format, source, verbose)
             if has_overlays:
                 registered_overlays = pack_meta.setdefault('overlays', {}).setdefault('entries', [])
                 overlay_re = re.compile(r'([pv]?[\d.]+)-([pv]?[\d.]+|future)')
-                for overlay in sorted((input / 'overlays').iterdir()):
+                for overlay in sorted((input_path / 'overlays').iterdir()):
                     if overlay.name in (reg['directory'] for reg in registered_overlays):
                         continue
                     elif overlay_match := overlay_re.fullmatch(overlay.name.replace('_', '.')):
@@ -440,12 +441,12 @@ def compile(*, input: str, output: str, verbose: bool, source: bool, **_):
             (temp_output / 'pack.mcmeta').write_text(json.dumps(pack_meta, indent=4))
 
         func_files = {}
-        for f in sorted(input.glob(f'*.{FUNC_EXT}')):
+        for f in sorted(input_path.glob(f'*.{FUNC_EXT}')):
             func_stack = [f.name]
             func_files[f.name] = []
             globals = build_globals(func_stack, [], func_files, {})
 
-            comp_file(input, input, f, globals, verbose=verbose)
+            comp_file(input_path, input_path, f, globals, verbose=verbose)
         if func_files:
             temp_output.mkdir(parents=True, exist_ok=True)
         for f, content in func_files.items():
@@ -524,12 +525,12 @@ def init_template(*, name: str, description: str, pack_format: PF, output: str, 
     if modded and (Path(output or '.') / 'pack.mcmeta').is_file():
         path = Path(output or '.')
         meta = read_pack_meta(path)
-        description = description or meta.get('pack', {}).get('description')
-        if not (description and isinstance(description, str)):
-            description = input('Description ():')
+        description: str | None = description or meta.get('pack', {}).get('description')
+        if description is None:
+            description: str = input('Description ():')
         namespaces = [d.name for d in (path / 'data').iterdir() if d.is_dir() and d.name != 'minecraft']
         default_ns = namespaces and namespaces[0]
-        namespace = namespace  or input(f'Namespace ({default_ns}): ') or default_ns
+        namespace = namespace or input(f'Namespace ({default_ns}): ') or str(default_ns)
         def_name = path.parent.resolve().name
         name = name or input(f'Name ({def_name}):') or def_name
         init_modded_template(name, description, path, namespace)
@@ -585,41 +586,48 @@ def init_template(*, name: str, description: str, pack_format: PF, output: str, 
 
 # <editor-fold defaultstate="collapsed" desc="def update_pack_format(): ...">
 def update_pack_format(*, input: str, target: str, min: str, max: str, **_) -> None:
-    input: Path = Path(input).absolute()
+    input: Path = Path(input or '.').absolute()
     pack_meta = read_pack_meta(input)
-    target_pack_format = pack_meta.get('pack').get('pack_format')
+    pack_data = pack_meta.setdefault('pack', {})
+    target_pack_format = pack_data.get('pack_format')
     if not isinstance(target_pack_format, int):
         raise ValueError('Invalid pack.mcmeta file')
+    target_pack_format: int
     min_pack_format, max_pack_format = None, None
-    match pack_meta.get('pack').get('supported_formats'):
+    match pack_data.get('supported_formats'):
         case [min_pack_format, max_pack_format]: pass
         case {'min_inclusive': min_pack_format, 'max_inclusive': max_pack_format}: pass
 
-    min_pack_format = pack_meta.get('pack').get('min_format', min_pack_format)
-    max_pack_format = pack_meta.get('pack').get('max_format', max_pack_format)
+    min_pack_format = pack_data.get('min_format', min_pack_format)
+    max_pack_format = pack_data.get('max_format', max_pack_format)
 
     if target or min or max:
         from builtins import min as min_f, max as max_f
-        target = version_or_pf(target, target_pack_format)
-        min = min_f(with_minor(version_or_pf(min, min_pack_format)) or target, with_minor(target))
-        max = max_f(with_minor(version_or_pf(max, max_pack_format)) or target, with_minor(target))
-        pack_meta.get('pack')['min_format'] = min
-        pack_meta.get('pack')['max_format'] = max
-        pack_meta.get('pack')['supported_formats'] = [major_pf(min), major_pf(max)]
+        target: PF = major_pf(version_or_pf(target, target_pack_format))
+        min: PF = min_f(with_minor(version_or_pf(min, min_pack_format)) or target, with_minor(target))
+        max: PF = max_f(with_minor(version_or_pf(max, max_pack_format)) or target, with_minor(target))
+        pack_data['min_format'] = min
+        pack_data['max_format'] = max
+        pack_data['supported_formats'] = [major_pf(min), major_pf(max)]
         if major_pf(min) >= DECIMATED_PF:
-            del pack_meta.get('pack')['supported_formats']
-        pack_meta.get('pack')['pack_format'] = major_pf(target)
+            del pack_data['supported_formats']
+        pack_data['pack_format'] = target
         (input / 'pack.mcmeta').write_text(json.dumps(pack_meta, indent=4, sort_keys=True))
     else:
+        min_pack_format: PF; max_pack_format: PF
+        target: PF; min: PF; max: PF
         target, min, max = target_pack_format, min_pack_format, max_pack_format
         print('edit these values via the --min, --target, or --max options')
 
-    def versions_of(pf: PF):
-        return f"({', '.join(key for key, value in pack_formats.items() if major_pf(value) == major_pf(pf))})"
+    def versions_of(pf: PF) -> str:
+        # be strict if pf is strict, otherwise be loose
+        func = major_pf if isinstance(pf, int) else with_minor
+        return f"({', '.join(key for key, value in pack_formats.items() if func(value) == func(pf))})"
 
+    isatty = sys.stdout.isatty()
     def c(s: str) -> str:
         """ color numbers in a string with ansi codes """
-        return re.sub(r'(\d+)', '\033[33m\\1\033[0m', s)
+        return re.sub(r'(\d+)', '\033[33m\\1\033[0m', s) if isatty else s
 
     if max:
         print(c(f"{'max pack_format:':<20}{max!s:>9} {versions_of(max)}"))
@@ -643,7 +651,7 @@ def get_data_from_url(url: str, max_redirects=10):
     connection.request('GET', path, headers=headers)
     response = connection.getresponse()
     if 300 <= response.status < 400 and max_redirects > 0:
-        return get_data_from_url(response.getheader('Location'), max_redirects - 1)
+        return get_data_from_url(response.getheader('Location', ''), max_redirects - 1)
     return response
 
 
