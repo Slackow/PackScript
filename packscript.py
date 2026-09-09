@@ -3,28 +3,31 @@
 # /// script
 # requires-python = ">=3.12"
 # ///
-__version__ = '0.2.7'
-__v_type__  = 'release'
+__version__ = '0.3.0'
+__v_type__  = 'dev'
 __author__  = 'Slackow'
 __license__ = 'MIT'
+
 
 # # # # # # # # # # # # # # # # # # # # # #
 # Please set this to your username if you are modifying this script
 modified_by = ''
 # # # # # # # # # # # # # # # # # # # # # #
 
-import argparse, json, re, sys, shutil, tempfile, textwrap
-from os import chdir
+import argparse, json, os, re, sys, shutil, tempfile, textwrap
+from contextlib import contextmanager
+from typing import overload, Never
 from pathlib import Path
 
 
-def ver(base_version, start, end, *, pf):
+PF = int | tuple[int, int]
+def ver(base_version: str, start: int, end: int, *, pf: PF):
     return {f'{base_version}.{x}': pf for x in range(start, end + 1)}
 
 
-PF = int | tuple[int, int]
 pack_formats: dict[str, PF] = {
     'future': (9001, 0),
+    '26.3': (122, 0), '26.2': (107, 1),
     '26.1.2': (101, 1), '26.1.1': (101, 1), '26.1': (101, 1),
     '1.21.11': (94, 1),
     '1.21.10': (88, 0), '1.21.9': (88, 0),
@@ -47,7 +50,7 @@ pack_formats: dict[str, PF] = {
     ** ver('1.14', 1, 4, pf=4),
     '1.14': 4, '1.13.2': 4, '1.13.1': 4, '1.13': 4,
 }
-latest_mc_version = list(pack_formats)[1]
+latest_mc_version = list(pack_formats.keys())[1]
 
 DATA_EXT = 'dps'
 FUNC_EXT = 'fps'
@@ -56,15 +59,19 @@ if __v_type__ not in ('release', 'dev'):
     raise AssertionError(f'Version type {__v_type__!r} is invalid')
 
 
-def ns(resource: str, /, *, default: str = 'minecraft'):
+def ns(resource: str, /, *, default: str = 'minecraft') -> str:
     return resource if ':' in resource else f'{default}:{resource}'
 
 
 namespace_re = re.compile(r'[a-z0-9-_.]+')
 func_re = re.compile(r'(?<!-)\bfunction\b(?!-)')
 
+# After this version, folders were renamed to be singular
 PLURAL_CUTOFF_PF: int = 45
+# After this version pack formats are not integers (e.g. 82.0 instead of 82)
 DECIMATED_PF: int = 82
+# After this version, overlays were added
+OVERLAY_PF: int = 15
 
 
 def right_most_function(contents: str) -> int | None:
@@ -101,20 +108,25 @@ def version_or_pf(s: str, default: PF | None=None) -> PF:
 
 def major_pf(pack_format: PF) -> int:
     match pack_format:
-        case (major, _):
-            return major
+        case (int(major), int()): pass
+        case int(major): pass
         case _:
-            return pack_format
+            raise ValueError(f"Invalid pack format: {pack_format!r}")
+    return major
 
+@overload
+def with_minor(pack_format: object) -> Never: ...
+@overload
+def with_minor(pack_format: PF) -> tuple[int, int]: ...
 
 def with_minor(pack_format: PF) -> tuple[int, int]:
-    if isinstance(pack_format, int):
-        return pack_format, 0
-    elif isinstance(pack_format, list):
-        return pack_format[0], pack_format[1]
-    else:
-        return pack_format
-
+    match pack_format:
+        case int(major):
+            return major, 0
+        case [int(major), int(minor)]:
+            return major, minor
+        case _:
+            raise ValueError(f"Invalid pack format: {pack_format!r}")
 
 def build_globals(func_stack: list, capturer_stack: list, func_files: dict,
                   other: dict, namespace='minecraft', function_tags=None) -> dict:
@@ -151,33 +163,22 @@ def build_globals(func_stack: list, capturer_stack: list, func_files: dict,
         func_files[func_name] = []
         return func_name, (extra or '')
 
-    class FuncContext:
-        def __init__(self, func_name: str):
-            self.func_name = func_name
+    @contextmanager
+    def __function__(func_name: str):
+        func_stack.append(func_name)
+        yield
+        func_stack.pop()
 
-        def __enter__(self):
-            func_stack.append(self.func_name)
+    def __replace_function__(func_name: str):
+        func_stack[-1] = func_name
 
-        def __exit__(self, *_):
-            func_stack.pop()
-
-        def replace(self):
-            func_stack[-1] = self.func_name
-
-    def __function__(func_name: str) -> FuncContext:
-        return FuncContext(func_name)
-
-    class Capturer:
-        def __enter__(self):
-            capturer = []
-            capturer_stack.append(capturer)
-            return capturer
-
-        def __exit__(self, *_):
+    @contextmanager
+    def capture_lines():
+        capturer_stack.append(result := [])
+        try:
+            yield result
+        finally:
             capturer_stack.pop()
-
-    def capture_lines() -> Capturer:
-        return Capturer()
 
     def n(s: str) -> str:
         return ns(s.removesuffix('.json'), default=namespace)
@@ -213,7 +214,7 @@ def build_globals(func_stack: list, capturer_stack: list, func_files: dict,
             other['/'.join(self._type)].pop(n(key))
 
     dp = Dp()
-    funcs = [__other__, __line__, __function_name__, __function__, capture_lines]
+    funcs = [__other__, __line__, __function_name__, __function__, __replace_function__, capture_lines]
     return {func.__name__: func for func in funcs} | {'ns': namespace, 'dp': dp}
 
 
@@ -240,7 +241,6 @@ def read_pack_meta(input: Path) -> dict:
 def comp_file(output_folder: Path, parent: Path, filename: Path, globals: dict[str, object], verbose=False):
     command_re = re.compile(r'([\t ]*)/(.*)')
     interpolation_re = re.compile(r'\$\{\{(.*?)}}|(?<!^)\$([a-zA-Z_]\w*)')
-    create_statement_re = re.compile(r'([\t ]*)create\b[ \t]*([\w/]+)\b[ \t]*([a-z\d:/_.-]*)[ \t]*->(.*)')
     code = []
     concat_line = None
     curr_file = parent / filename
@@ -273,18 +273,12 @@ def comp_file(output_folder: Path, parent: Path, filename: Path, globals: dict[s
                 contents = f'{contents[:func_def_start]} {{__f}}{{__extra}}'
                 extra_line = f'{indent}with __function__(__f):'
                 if end_chr == ';':
-                    extra_line = f'{indent}__function__(__f).replace()'
+                    extra_line = f'{indent}__replace_function__(__f)'
             code.append(f'{indent}__line__(rf""" {contents} """[1:-1])')
             if extra_line:
                 code.append(extra_line)
         else:
-            create_match = create_statement_re.fullmatch(line)
-            if create_match:
-                indent, file_type, name, data = create_match.groups()
-                name = ns(name, default=str(globals['ns']))
-                code.append(f'{indent}__other__("{file_type}")["{name}"] ={data}')
-            else:
-                code.append(line)
+            code.append(line)
     pyth = '\n'.join(code)
 
     def print_code(file=sys.stdout):
@@ -306,7 +300,7 @@ def comp_file(output_folder: Path, parent: Path, filename: Path, globals: dict[s
         sys.path = old_path
 
 
-def comp_pack(output_folder: Path, pack_format: int, source: bool, verbose: bool, overlay=False):
+def comp_pack(output_folder: Path, min_pack_format: PF, max_pack_format: PF, source: bool, verbose: bool, overlay=False):
     function_tags: dict[str, list[str]] = {}
     other: dict[str, dict[str, object]] = {}
     for namespace in sorted((output_folder / 'data').iterdir()):
@@ -316,8 +310,8 @@ def comp_pack(output_folder: Path, pack_format: int, source: bool, verbose: bool
         capturer_stack: list[str] = []
 
         globals = build_globals(func_stack, capturer_stack, func_files, other, namespace.name, function_tags)
-        working_folder = (namespace / get_folder("source", pack_format))
-        if (not get_folder('source', pack_format).endswith('s') and
+        working_folder = (namespace / get_folder("source", max_pack_format))
+        if (not get_folder('source', max_pack_format).endswith('s') and
                 (namespace / 'sources').exists()):
             raise ValueError('Legacy "sources" folder detected! Rename your folders to be singular!')
 
@@ -326,18 +320,18 @@ def comp_pack(output_folder: Path, pack_format: int, source: bool, verbose: bool
             comp_file(base, working_folder, filename, globals, verbose=verbose)
 
         if not source:
-            shutil.rmtree(namespace / get_folder('source', pack_format), ignore_errors=True)
+            shutil.rmtree(namespace / get_folder('source', max_pack_format), ignore_errors=True)
         func_files.pop('')
         # Iterate through generated functions
         for name, content in func_files.items():
-            func_dir = get_folder('function', pack_format)
+            func_dir = get_folder('function', max_pack_format)
             mcfunction_path = output_folder / 'data' / f'{name.replace(":", f"/{func_dir}/")}.mcfunction'
             if not content:
                 continue
             mcfunction_path.parent.mkdir(parents=True, exist_ok=True)
             mcfunction_path.write_text(get_header() + '\n'.join(content) + '\n')
 
-        other.setdefault(f'tags/{get_folder("function", pack_format)}', {}).update(
+        other.setdefault(f'tags/{get_folder("function", max_pack_format)}', {}).update(
             {tag: {'values': func_names} for tag, func_names in function_tags.items()})
 
         # Write stuff in other
@@ -348,14 +342,27 @@ def comp_pack(output_folder: Path, pack_format: int, source: bool, verbose: bool
                     name += '.json'
                 other_path = output_folder / 'data' / name
                 other_path.parent.mkdir(parents=True, exist_ok=True)
-                if isinstance(content, (dict, list)):
-                    content = json.dumps(content, indent=2, ensure_ascii=False, sort_keys=True)
-                if not isinstance(content, (str, bytes)):
-                    raise ValueError(f'Error: invalid content: {content!r}')
-                if isinstance(content, bytes):
-                    other_path.write_bytes(content)
-                else:
-                    other_path.write_text(content)
+                match content:
+                    case dict() | list():
+                        other_path.write_text(json.dumps(content, indent=2, ensure_ascii=False, sort_keys=True))
+                    case str():
+                        other_path.write_text(content)
+                    case bytes():
+                        other_path.write_bytes(content)
+                    case _:
+                        raise ValueError(f'Error: invalid content: {content!r}')
+    # Backport old folders if present
+    if major_pf(min_pack_format) < PLURAL_CUTOFF_PF <= major_pf(max_pack_format):
+        changed = [
+            'structure', 'advancement', 'recipe', 'loot_table', 'predicate', 'item_modifier', 'function',
+            'tags/function', 'tags/item', 'tags/block', 'tags/entity_type', 'tags/fluid', 'tags/game_event',
+        ]
+        for namespace in sorted((output_folder / 'data').iterdir()):
+            for registry in changed:
+                try:
+                    shutil.copytree(namespace / registry, namespace / f'{registry}s')
+                except (FileExistsError, FileNotFoundError):
+                    pass
 
 
 def compile(*, input: str, output: str, verbose: bool, source: bool, **_):
@@ -399,7 +406,7 @@ def compile(*, input: str, output: str, verbose: bool, source: bool, **_):
                     shutil.copytree(src, dst, dirs_exist_ok=dirs_exist_ok, ignore=shutil.ignore_patterns(".DS_Store"))
                 return True
 
-            has_overlays = config('overlays/', dst='.', dirs_exist_ok=True)
+            has_overlays = config('overlays/', dst='./', dirs_exist_ok=True)
             config('data/')
             config('pack.png')
             if is_jar:
@@ -409,35 +416,43 @@ def compile(*, input: str, output: str, verbose: bool, source: bool, **_):
                 config('mods.toml', dst='META-INF/neoforge.mods.toml')
                 config('neoforge.mods.toml', dst='META-INF/neoforge.mods.toml', mkdirs=True)
             pack_meta = read_pack_meta(input_path)
-            pack_format = pack_meta.get('pack', {}).get('pack_format')
-            if not isinstance(pack_format, int):
-                raise ValueError('Invalid pack.mcmeta file, specify a target pack_format.')
-            comp_pack(temp_output, pack_format, source, verbose)
+            target_pack_format = pack_meta.get('pack', {}).get('pack_format')
+            min_pack_format = with_minor(pack_meta.get('pack', {}).get('min_format', target_pack_format))
+            max_pack_format = with_minor(pack_meta.get('pack', {}).get('max_format', target_pack_format))
+
+            comp_pack(temp_output, min_pack_format, max_pack_format, source, verbose)
             if has_overlays:
                 registered_overlays = pack_meta.setdefault('overlays', {}).setdefault('entries', [])
+                registered_overlay_names = set(reg['directory'] for reg in registered_overlays)
                 overlay_re = re.compile(r'([pv]?[\d.]+)-([pv]?[\d.]+|future)')
+                renames = []
                 for overlay in sorted((input_path / 'overlays').iterdir()):
-                    if overlay.name in (reg['directory'] for reg in registered_overlays):
+                    overlay_dst_name = overlay.name.replace('.', '_')
+                    if overlay_dst_name != overlay.name:
+                        renames.append((overlay.name, overlay_dst_name))
+                    if overlay_dst_name in registered_overlay_names:
                         continue
                     elif overlay_match := overlay_re.fullmatch(overlay.name.replace('_', '.')):
-                        min, max = map(version_or_pf, overlay_match.groups())
+                        min_pf, max_pf = map(version_or_pf, overlay_match.groups())
                     elif pf := version_or_pf(overlay.name.replace('_', '.'), default=False):
-                        min = max = pf
+                        min_pf = max_pf = pf
                     else:
-                        raise ValueError(f'Unregistered overlay {overlay.name!r}, add it to pack.mcmeta or name it '
-                                         f'after the version(s) it is for (1_20_2, 1_20_3-1_20_5)')
+                        raise ValueError(f'Unregistered overlay {overlay_dst_name!r}, add it to pack.mcmeta or name it '
+                                         f'after the version(s) it is for (v1.20.2, v1.20.3-v1.20.5)')
                     overlay_value = {
-                        'formats': [major_pf(min), major_pf(max)],
-                        'min_format': with_minor(min), 'max_format': with_minor(max),
-                        'directory': overlay.name,
+                        'formats': [major_pf(min_pf), major_pf(max_pf)],
+                        'min_format': with_minor(min_pf), 'max_format': with_minor(max_pf),
+                        'directory': overlay_dst_name,
                     }
 
-                    if with_minor(pack_meta.get('pack', {}).get('min_format', 0)) >= (DECIMATED_PF, 0):
+                    if with_minor(min_pack_format) >= (DECIMATED_PF, 0):
                         del overlay_value['formats']
                     registered_overlays.insert(0, overlay_value)
+                for src_overlay, dst_overlay in renames:
+                    shutil.move(temp_output / src_overlay, temp_output / dst_overlay)
                 for overlay in registered_overlays:
                     path = temp_output / overlay['directory']
-                    comp_pack(path, pack_format, source, verbose, overlay=True)
+                    comp_pack(path, min_pf, max_pf, source, verbose, overlay=True)
             (temp_output / 'pack.mcmeta').write_text(json.dumps(pack_meta, indent=4))
 
         func_files = {}
@@ -460,7 +475,7 @@ def compile(*, input: str, output: str, verbose: bool, source: bool, **_):
         if is_zip or is_jar:
             cwd = Path.cwd()
             try:
-                chdir(temp_dir)
+                os.chdir(temp_dir)
                 shutil.make_archive(temp_output.name, 'zip', temp_output.name)
                 if is_jar:
                     zip_path = Path(temp_dir) / f"{temp_output.name}.zip"
@@ -471,7 +486,7 @@ def compile(*, input: str, output: str, verbose: bool, source: bool, **_):
                     final_zip_path = final_output_folder.parent / f"{final_output_folder.name}.zip"
                     shutil.copy(zip_path, final_zip_path)
             finally:
-                chdir(cwd)
+                os.chdir(cwd)
         else:
             if final_output_folder.exists():
                 for item in final_output_folder.iterdir():
@@ -504,7 +519,7 @@ def init_modded_template(name: str, description: str, output: Path, namespace: s
         "icon": "pack.png",
     }, indent=4, sort_keys=True))
     (output / 'mods.toml').write_text(textwrap.dedent(f'''
-        # By default 'mods.toml' will be copied to 'neoforge.mods.toml' as well, 
+        # By default 'mods.toml' will be copied to 'neoforge.mods.toml' as well,
         # Create a separate 'neoforge.mods.toml' to override values here
         modLoader="lowcodefml"
         loaderVersion="[1,)"
@@ -585,7 +600,7 @@ def init_template(*, name: str, description: str, pack_format: PF, output: str, 
 
 
 # <editor-fold defaultstate="collapsed" desc="def update_pack_format(): ...">
-def update_pack_format(*, input: str, target: str, min: str, max: str, **_) -> None:
+def update_pack_format(*, input: str, target: str, min_pf: str, max_pf: str, **_) -> None:
     input: Path = Path(input or '.').absolute()
     pack_meta = read_pack_meta(input)
     pack_data = pack_meta.setdefault('pack', {})
@@ -601,22 +616,21 @@ def update_pack_format(*, input: str, target: str, min: str, max: str, **_) -> N
     min_pack_format = pack_data.get('min_format', min_pack_format)
     max_pack_format = pack_data.get('max_format', max_pack_format)
 
-    if target or min or max:
-        from builtins import min as min_f, max as max_f
+    if target or min_pf or max_pf:
         target: PF = major_pf(version_or_pf(target, target_pack_format))
-        min: PF = min_f(with_minor(version_or_pf(min, min_pack_format)) or target, with_minor(target))
-        max: PF = max_f(with_minor(version_or_pf(max, max_pack_format)) or target, with_minor(target))
-        pack_data['min_format'] = min
-        pack_data['max_format'] = max
-        pack_data['supported_formats'] = [major_pf(min), major_pf(max)]
-        if major_pf(min) >= DECIMATED_PF:
+        min_pf: PF = min(with_minor(version_or_pf(min_pf, min_pack_format)) or target, with_minor(target))
+        max_pf: PF = max(with_minor(version_or_pf(max_pf, max_pack_format)) or target, with_minor(target))
+        pack_data['min_format'] = min_pf
+        pack_data['max_format'] = max_pf
+        pack_data['supported_formats'] = [major_pf(min_pf), major_pf(max_pf)]
+        if major_pf(min_pf) >= DECIMATED_PF:
             del pack_data['supported_formats']
         pack_data['pack_format'] = target
         (input / 'pack.mcmeta').write_text(json.dumps(pack_meta, indent=4, sort_keys=True))
     else:
         min_pack_format: PF; max_pack_format: PF
-        target: PF; min: PF; max: PF
-        target, min, max = target_pack_format, min_pack_format, max_pack_format
+        target: PF; min_pf: PF; max_pf: PF
+        target, min_pf, max_pf = target_pack_format, min_pack_format, max_pack_format
         print('edit these values via the --min, --target, or --max options')
 
     def versions_of(pf: PF) -> str:
@@ -629,80 +643,15 @@ def update_pack_format(*, input: str, target: str, min: str, max: str, **_) -> N
         """ color numbers in a string with ansi codes """
         return re.sub(r'(\d+)', '\033[33m\\1\033[0m', s) if isatty else s
 
-    if max:
-        print(c(f"{'max pack_format:':<20}{max!s:>9} {versions_of(max)}"))
+    if max_pf:
+        print(c(f"{'max pack_format:':<20}{max_pf!s:>9} {versions_of(max_pf)}"))
     print(c(f"{'target pack_format:':<20}{target!s:>9} {versions_of(target)}"))
-    if min:
-        print(c(f"{'min pack_format:':<20}{min!s:>9} {versions_of(min)}"))
-# </editor-fold>
-
-# <editor-fold defaultstate="collapsed" desc="def update(): ...">
-def get_data_from_url(url: str, max_redirects=10):
-    import ssl
-    from http.client import HTTPSConnection
-    from urllib.parse import urlparse
-    parsed_url = urlparse(url)
-    context = ssl.create_default_context()
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
-    connection = HTTPSConnection(parsed_url.netloc, context=context)
-    path = parsed_url.path + ((parsed_url.query and f"?{parsed_url.query}") or "")
-    headers = {'Accept': '*/*', 'User-Agent': 'packscript.py'}
-    connection.request('GET', path, headers=headers)
-    response = connection.getresponse()
-    if 300 <= response.status < 400 and max_redirects > 0:
-        return get_data_from_url(response.getheader('Location', ''), max_redirects - 1)
-    return response
-
-
-def get_latest_version() -> str:
-    url = 'https://api.github.com/repos/Slackow/PackScript/releases/latest'
-    response = get_data_from_url(url)
-    if response.status == 200:
-        data = response.read()
-        json_data = json.loads(data.decode('utf-8'))
-        return json_data['tag_name']
-    else:
-        raise IOError(f'Could not get latest version \nstatus: {response.status}\nbody: {response.read()}')
-
-
-def replace_script_with_latest() -> None:
-    print("Updating PackScript...")
-    url = 'https://github.com/Slackow/PackScript/releases/latest/download/packscript.py'
-    response = get_data_from_url(url)
-    if response.status == 200:
-        data = response.read()
-        if b'\n__version__ = ' in data:
-            Path(sys.argv[0]).write_bytes(data)
-            print("Done!")
-            return
-        print(data, file=sys.stderr)
-        raise ValueError("Bad data returned")
-    else:
-        raise IOError(f'Could not get packscript.py \nstatus: {response.status}\nbody:{response.read()}')
-
-
-def update() -> None:
-    if __package__ is not None:
-        print('You are using pip! Cannot update.')
-        print('To update the package via pip use "pip install --upgrade packscript"')
-        return
-    if getattr(sys, 'frozen', False):
-        print('The script is frozen! (embedded in an exe or zip etc.) Cannot update.')
-        return
-    latest = get_latest_version()
-    if latest == __version__:
-        print(f"Up to date, PackScript {__version__}")
-        return
-    print(f"Latest version of PackScript is {latest}, you have {__version__}.")
-    if [int(x) for x in latest.split('.')] < [int(x) for x in __version__.split('.')]:
-        print("You have a future version, not updating.")
-        return
-    replace_script_with_latest()
+    if min_pf:
+        print(c(f"{'min pack_format:':<20}{min_pf!s:>9} {versions_of(min_pf)}"))
 # </editor-fold>
 
 
-def main():
+def main(*argv):
     parser = argparse.ArgumentParser(
         description='This is a datapack compiler for Minecraft\n'
                     'Source: https://github.com/Slackow/packscript',
@@ -757,15 +706,9 @@ def main():
     parser_pack_format.add_argument('-m', '--min', type=str, help='Set the minimum pack_format', default='')
     parser_pack_format.add_argument('-M', '--max', type=str, help='Set the maximum pack_format', default='')
 
-    # "update" command
-    subparsers.add_parser('update', aliases=['u'],
-                          help='Check for PackScript updates, and update if found.',
-                          description='Update PackScript if there is an update available.',
-                          formatter_class=argparse.RawTextHelpFormatter)
+    args = parser.parse_args(argv)
 
-    args = parser.parse_args()
-
-    args_dict = {key.replace('-', '_'): val for key, val in vars(args).items()}
+    args_dict = vars(args)
     if args.version:
         print(f'PackScript {__version__}-{__v_type__}')
     elif args.command is None:
@@ -773,9 +716,7 @@ def main():
     elif args.command.startswith('c'):
         compile(**args_dict)
     elif args.command.startswith('p'):
-        update_pack_format(**args_dict)
-    elif args.command.startswith('u'):
-        update()
+        update_pack_format(min_pf=args.min, max_pf=args.max, **args_dict)
     else:
         try:
             init_template(**args_dict)
@@ -785,4 +726,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main(*sys.argv[1:])

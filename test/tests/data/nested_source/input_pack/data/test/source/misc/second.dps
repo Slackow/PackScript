@@ -2,4 +2,4 @@
 /function func:
     /return run seed
 
-create tags/block chest -> {'values':['minecraft:chest','minecraft:trapped_chest']}
+dp['tags/block', 'chest'] = {'values':['minecraft:chest','minecraft:trapped_chest']}

@@ -8,12 +8,7 @@ from pathlib import Path
 parent_dir = Path(__file__).resolve().parent.parent
 sys.path.append(str(parent_dir))
 
-from packscript import version_or_pf
-
-
-def packscript(*args):
-    args = [f"'{arg}'" for arg in args]
-    os.system(f'uv run ../packscript.py {" ".join(args)}')
+from packscript import version_or_pf, main as packscript
 
 
 def read_mcfunction(filepath):

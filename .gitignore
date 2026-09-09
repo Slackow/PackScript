@@ -7,3 +7,5 @@
 /*.mcfunction
 /PackScript.code-workspace
 .venv
+
+__pycache__
