@@ -27,3 +27,21 @@ packages.find.exclude = ["test", "test.*"]
 
 [tool.setuptools.dynamic]
 version = {attr = "packscript.__version__"}
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+ignore = [
+    "I001",
+    "S102",
+]
+[tool.ruff.lint.isort]
+combine-as-imports = true
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.8",
+    "ty>=0.0.82",
+]

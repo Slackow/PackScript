@@ -16,19 +16,20 @@ modified_by = ''
 
 import argparse, json, os, re, sys, shutil, tempfile, textwrap
 from contextlib import contextmanager
-from typing import overload, Never
+from typing import overload, Never, Any, assert_never
 from pathlib import Path
 
 
 PF = int | tuple[int, int]
 def ver(base_version: str, start: int, end: int, *, pf: PF):
-    return {f'{base_version}.{x}': pf for x in range(start, end + 1)}
+    return {f'{base_version}{f".{x}" if x else ""}': pf for x in reversed(range(start, end + 1))}
 
 
 pack_formats: dict[str, PF] = {
     'future': (9001, 0),
-    '26.3': (122, 0), '26.2': (107, 1),
-    '26.1.2': (101, 1), '26.1.1': (101, 1), '26.1': (101, 1),
+    '26.3': (121, 0),
+    '26.2': (107, 1),
+    ** ver('26.1', 0, 2, pf=(101, 1)),
     '1.21.11': (94, 1),
     '1.21.10': (88, 0), '1.21.9': (88, 0),
     '1.21.8': 81, '1.21.7': 81,
@@ -38,17 +39,17 @@ pack_formats: dict[str, PF] = {
     '1.21.3': 57, '1.21.2': 57,
     '1.21.1': 48, '1.21': 48,
     '1.20.6': 41, '1.20.5': 41,
-    '1.20.4': 26, '1.20.3': 26, '1.20.2': 18,
-    '1.20.1': 15, '1.20': 15, '1.19.4': 12,
-    ** ver('1.19', 1, 3, pf=10),
-    '1.19': 10,
+    '1.20.4': 26, '1.20.3': 26,
+    '1.20.2': 18,
+    '1.20.1': 15, '1.20': 15,
+    '1.19.4': 12,
+    ** ver('1.19', 0, 3, pf=10),
     '1.18.2': 9,
     '1.18.1': 8, '1.18': 8,
     '1.17.1': 7, '1.17': 7,
     ** ver('1.16', 2, 5, pf=6),
-    '1.16.1': 5, '1.16': 5, '1.15.2': 5, '1.15.1': 5, '1.15': 5,
-    ** ver('1.14', 1, 4, pf=4),
-    '1.14': 4, '1.13.2': 4, '1.13.1': 4, '1.13': 4,
+    '1.16.1': 5, '1.16': 5, ** ver('1.15', 0, 2, pf=5),
+    ** ver('1.14', 0, 4, pf=4), ** ver('1.13', 0, 2, pf=4),
 }
 latest_mc_version = list(pack_formats.keys())[1]
 
@@ -82,7 +83,7 @@ def right_most_function(contents: str) -> int | None:
 
 def version_or_pf(s: str, default: PF | None=None) -> PF:
     prefix = s[:1]
-    if prefix not in 'pv':
+    if prefix not in ('p', 'v'):
         prefix = None
     else:
         s = s[1:]
@@ -92,32 +93,30 @@ def version_or_pf(s: str, default: PF | None=None) -> PF:
     try:
         dot = s.index('.')
         pf = int(s[:dot]), int(s[dot:])
-        if major_pf(pf) < DECIMATED_PF or prefix == 'v': raise ValueError("Unknown pack format/version", s)
+        if major_pf(pf) < DECIMATED_PF or prefix == 'v':
+            raise ValueError("Unknown pack format/version", s)
         return pf
     except ValueError:
         try:
             pf = int(s)
-            if prefix == 'v': raise ValueError("Unknown pack format/version", s)
+            if prefix == 'v':
+                raise ValueError("Unknown pack format/version", s)
             return pf if pf < DECIMATED_PF else with_minor(pf)
-        except ValueError as e:
+        except ValueError:
             if default is not None:
                 return default
             print(f"Tried {s!r}", file=sys.stderr)
-            raise e
+            raise
 
 
 def major_pf(pack_format: PF) -> int:
     match pack_format:
-        case (int(major), int()): pass
-        case int(major): pass
-        case _:
-            raise ValueError(f"Invalid pack format: {pack_format!r}")
-    return major
+        case (int(major), int()):
+            return major
+        case int(major):
+            return major
+    raise TypeError(f"Invalid pack format: {pack_format!r}")
 
-@overload
-def with_minor(pack_format: object) -> Never: ...
-@overload
-def with_minor(pack_format: PF) -> tuple[int, int]: ...
 
 def with_minor(pack_format: PF) -> tuple[int, int]:
     match pack_format:
@@ -125,8 +124,7 @@ def with_minor(pack_format: PF) -> tuple[int, int]:
             return major, 0
         case [int(major), int(minor)]:
             return major, minor
-        case _:
-            raise ValueError(f"Invalid pack format: {pack_format!r}")
+    raise TypeError(f"Invalid pack format: {pack_format!r}")
 
 def build_globals(func_stack: list, capturer_stack: list, func_files: dict,
                   other: dict, namespace='minecraft', function_tags=None) -> dict:
@@ -292,10 +290,10 @@ def comp_file(output_folder: Path, parent: Path, filename: Path, globals: dict[s
     sys.path.insert(0, str(curr_file.parent))
     try:
         exec(pyth, globals)
-    except Exception as e:
+    except Exception:
         print('Error in:', filename, file=sys.stderr)
         print_code(sys.stderr)
-        raise e
+        raise
     finally:
         sys.path = old_path
 
@@ -375,7 +373,7 @@ def compile(*, input: str, output: str, verbose: bool, source: bool, **_):
     if not final_output_folder.stem:
         raise ValueError('Please provide an output with a filename')
     if input_path == final_output_folder:
-        raise shutil.SameFileError('Input and output directories must not have the same')
+        raise shutil.SameFileError('Input and output directories must not be the same')
 
     # Create a temporary directory for building
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -409,6 +407,8 @@ def compile(*, input: str, output: str, verbose: bool, source: bool, **_):
             has_overlays = config('overlays/', dst='./', dirs_exist_ok=True)
             config('data/')
             config('pack.png')
+            config('LICENSE');config('LICENSE.md');config('LICENSE.txt')
+            config('README');config('README.md');config('README.txt')
             if is_jar:
                 config('assets/')
                 config('fabric.mod.json')
@@ -416,6 +416,9 @@ def compile(*, input: str, output: str, verbose: bool, source: bool, **_):
                 config('mods.toml', dst='META-INF/neoforge.mods.toml')
                 config('neoforge.mods.toml', dst='META-INF/neoforge.mods.toml', mkdirs=True)
             pack_meta = read_pack_meta(input_path)
+            packscript_meta = pack_meta.pop('packscript', {})
+            if description := packscript_meta.get('description'):
+                pack_meta['pack']['description'] = description
             target_pack_format = pack_meta.get('pack', {}).get('pack_format')
             min_pack_format = with_minor(pack_meta.get('pack', {}).get('min_format', target_pack_format))
             max_pack_format = with_minor(pack_meta.get('pack', {}).get('max_format', target_pack_format))
@@ -423,35 +426,30 @@ def compile(*, input: str, output: str, verbose: bool, source: bool, **_):
             comp_pack(temp_output, min_pack_format, max_pack_format, source, verbose)
             if has_overlays:
                 registered_overlays = pack_meta.setdefault('overlays', {}).setdefault('entries', [])
-                registered_overlay_names = set(reg['directory'] for reg in registered_overlays)
+                registered_overlay_names = {reg['directory'] for reg in registered_overlays}
                 overlay_re = re.compile(r'([pv]?[\d.]+)-([pv]?[\d.]+|future)')
-                renames = []
                 for overlay in sorted((input_path / 'overlays').iterdir()):
-                    overlay_dst_name = overlay.name.replace('.', '_')
-                    if overlay_dst_name != overlay.name:
-                        renames.append((overlay.name, overlay_dst_name))
-                    if overlay_dst_name in registered_overlay_names:
+                    if overlay.name in registered_overlay_names:
                         continue
                     elif overlay_match := overlay_re.fullmatch(overlay.name.replace('_', '.')):
                         min_pf, max_pf = map(version_or_pf, overlay_match.groups())
                     elif pf := version_or_pf(overlay.name.replace('_', '.'), default=False):
                         min_pf = max_pf = pf
                     else:
-                        raise ValueError(f'Unregistered overlay {overlay_dst_name!r}, add it to pack.mcmeta or name it '
+                        raise ValueError(f'Unregistered overlay {overlay.name!r}, add it to pack.mcmeta or name it '
                                          f'after the version(s) it is for (v1.20.2, v1.20.3-v1.20.5)')
                     overlay_value = {
                         'formats': [major_pf(min_pf), major_pf(max_pf)],
                         'min_format': with_minor(min_pf), 'max_format': with_minor(max_pf),
-                        'directory': overlay_dst_name,
+                        'directory': overlay.name,
                     }
-
-                    if with_minor(min_pack_format) >= (DECIMATED_PF, 0):
-                        del overlay_value['formats']
                     registered_overlays.insert(0, overlay_value)
-                for src_overlay, dst_overlay in renames:
-                    shutil.move(temp_output / src_overlay, temp_output / dst_overlay)
+                requires_old_field = any(major_pf(overlay['min_format']) < DECIMATED_PF for overlay in registered_overlays)
                 for overlay in registered_overlays:
+                    if not requires_old_field:
+                        overlay.pop('formats', None)
                     path = temp_output / overlay['directory']
+                    min_pf = overlay['min_format']; max_pf = overlay['max_format']
                     comp_pack(path, min_pf, max_pf, source, verbose, overlay=True)
             (temp_output / 'pack.mcmeta').write_text(json.dumps(pack_meta, indent=4))
 
@@ -517,7 +515,7 @@ def init_modded_template(name: str, description: str, output: Path, namespace: s
             "fabric-api": "*",
         },
         "icon": "pack.png",
-    }, indent=4, sort_keys=True))
+    }, indent=4, sort_keys=False))
     (output / 'mods.toml').write_text(textwrap.dedent(f'''
         # By default 'mods.toml' will be copied to 'neoforge.mods.toml' as well,
         # Create a separate 'neoforge.mods.toml' to override values here
@@ -529,14 +527,16 @@ def init_modded_template(name: str, description: str, output: Path, namespace: s
 
         [[mods]]
         modId="{namespace}"
+        displayName="{name}"
         version="1.0"
         description="""{description}"""
         logoFile="pack.png"
+        iconFile="pack.png"
         authors=""
     '''.lstrip('\n')))
 
 
-def init_template(*, name: str, description: str, pack_format: PF, output: str, modded: bool | None, namespace: str, **_) -> None:
+def init_template(*, name: str, description: str, pack_format: PF, output: str, modded: bool | None, init_git: bool | None, namespace: str, **_) -> None:
     if modded and (Path(output or '.') / 'pack.mcmeta').is_file():
         path = Path(output or '.')
         meta = read_pack_meta(path)
@@ -566,11 +566,15 @@ def init_template(*, name: str, description: str, pack_format: PF, output: str, 
         except ValueError:
             print(f"You must provide a recognized mc version or a pack format, {v!r} is neither.")
     v = v and f' for version {v}'
-    description = description or input(f'Description (Datapack {name!r}{v}): ') or \
-                  f'Datapack {name!r}{v}'
+    description = description or input(f'Description (Datapack {name!r}{v}): ') or f'Datapack {name!r}{v}'
     modded = modded if modded is not None else input('Add modded metadata for '
-                                                     'forge/fabric/neoforge? y/n (n): ')[:1].lower() == 'y'
+                                                     'fabric/forge/neoforge? y/n (n): ')[:1].lower() == 'y'
     output: str = output or input(f'Output Directory ({name.replace(" ", "_")}): ') or name.replace(' ', '_')
+    if init_git is not False:
+        git_path = shutil.which('git')
+    if init_git is None and git_path:
+        init_git: bool = input('Initialize git repo? (y/n)')[:1].lower() == 'y'
+
     output: Path = Path(output).absolute()
     if (output / 'data').exists() or (output / 'pack.mcmeta').exists():
         raise ValueError('data or pack.mcmeta already present in this directory, '
@@ -597,6 +601,18 @@ def init_template(*, name: str, description: str, pack_format: PF, output: str, 
     (output / 'pack.mcmeta').write_text(json.dumps(pack_meta, indent=4, sort_keys=True))
     if modded:
         init_modded_template(name, description, output, namespace)
+    if init_git:
+        (output / '.gitignore').write_text(textwrap.dedent('''
+            output
+            /*.zip
+            /*.jar
+
+            .venv
+            __pycache__
+            .idea
+            .DS_Store
+        '''.lstrip('\n')))
+        os.system(f'{git_path} init')
 
 
 # <editor-fold defaultstate="collapsed" desc="def update_pack_format(): ...">
@@ -606,7 +622,7 @@ def update_pack_format(*, input: str, target: str, min_pf: str, max_pf: str, **_
     pack_data = pack_meta.setdefault('pack', {})
     target_pack_format = pack_data.get('pack_format')
     if not isinstance(target_pack_format, int):
-        raise ValueError('Invalid pack.mcmeta file')
+        raise ValueError('Invalid pack.mcmeta file')  # noqa: TRY004
     target_pack_format: int
     min_pack_format, max_pack_format = None, None
     match pack_data.get('supported_formats'):
@@ -626,11 +642,9 @@ def update_pack_format(*, input: str, target: str, min_pf: str, max_pf: str, **_
         if major_pf(min_pf) >= DECIMATED_PF:
             del pack_data['supported_formats']
         pack_data['pack_format'] = target
-        (input / 'pack.mcmeta').write_text(json.dumps(pack_meta, indent=4, sort_keys=True))
+        (input / 'pack.mcmeta').write_text(json.dumps(pack_meta, indent=4))
     else:
-        min_pack_format: PF; max_pack_format: PF
-        target: PF; min_pf: PF; max_pf: PF
-        target, min_pf, max_pf = target_pack_format, min_pack_format, max_pack_format
+        target = target_pack_format; min_pf = min_pack_format; max_pf = max_pack_format
         print('edit these values via the --min, --target, or --max options')
 
     def versions_of(pf: PF) -> str:
@@ -651,7 +665,7 @@ def update_pack_format(*, input: str, target: str, min_pf: str, max_pf: str, **_
 # </editor-fold>
 
 
-def main(*argv):
+def main(argv: list[str] = sys.argv[1:]):
     parser = argparse.ArgumentParser(
         description='This is a datapack compiler for Minecraft\n'
                     'Source: https://github.com/Slackow/packscript',
@@ -670,7 +684,7 @@ def main(*argv):
                                            formatter_class=argparse.RawTextHelpFormatter)
     parser_compile.add_argument('-o', '--output', type=str, help='Output directory/zip', default='output')
     parser_compile.add_argument('-i', '--input', type=str, help='Input directory', default='.')
-    parser_compile.add_argument('-v', '--verbose', help='Print generated Python code.', default=False,
+    parser_compile.add_argument('-v', '--verbose', help='More detailed error messages.', default=False,
                                 action='store_true')
     parser_compile.add_argument('-S', '--source', help='Include source files in output.', default=False,
                                 action='store_true')
@@ -693,6 +707,8 @@ def main(*argv):
     parser_init.add_argument('-m', '--modded', help='Init modded config files, for fabric, forge, and neoforge',
                              action='store_true', default=None)
     parser_init.add_argument('--no-modded', action='store_false', dest='modded', help='Do not initialize any modded config files')
+    parser_init.add_argument('-v', '--verbose', help='More detailed error messages',
+                             action='store_true', default=False)
 
     # "pack_format" command
     parser_pack_format = subparsers.add_parser('pack_format', aliases=['pf'],
@@ -707,7 +723,8 @@ def main(*argv):
     parser_pack_format.add_argument('-M', '--max', type=str, help='Set the maximum pack_format', default='')
 
     args = parser.parse_args(argv)
-
+    if not getattr(args, 'verbose', False):
+        sys.tracebacklimit = 0
     args_dict = vars(args)
     if args.version:
         print(f'PackScript {__version__}-{__v_type__}')
@@ -717,7 +734,10 @@ def main(*argv):
         compile(**args_dict)
     elif args.command.startswith('p'):
         update_pack_format(min_pf=args.min, max_pf=args.max, **args_dict)
-    else:
+    elif args.command.startswith('b'):
+        # TODO add build subcommand
+        pass
+    else: # init
         try:
             init_template(**args_dict)
         except KeyboardInterrupt:
@@ -726,4 +746,4 @@ def main(*argv):
 
 
 if __name__ == '__main__':
-    main(*sys.argv[1:])
+    main()

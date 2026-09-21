@@ -55,7 +55,7 @@ class TestPackScriptCompilation(unittest.TestCase):
                 output_dir = os.path.join(self.temp_dir, case)
 
                 # Run the packscript compiler
-                packscript('compile', '-i', input_dir, '-o', output_dir)
+                packscript(['compile', '-i', input_dir, '-o', output_dir])
 
                 # Compare output directory with expected output directory
                 self.deep_compare_dirs(output_dir, expected_output_dir)

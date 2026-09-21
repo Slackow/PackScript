@@ -1,11 +1,12 @@
 .idea
-
 .DS_Store
+
 *.zip
 *.jar
-
 /*.mcfunction
-/PackScript.code-workspace
-.venv
 
+.venv
+.ruff_cache
+
+*.egg-info/
 __pycache__
